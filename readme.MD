@@ -1,13 +1,34 @@
 SolarEdge InfluxDB monitor
 ==========================
 
-this is a simple python tool to export SolarEdge inverter data to
+This is a simple python tool to export SolarEdge inverter data to
 an InfluxDb <https://www.influxdata.com/time-series-platform/influxdb/> for monitoring purposes. It works by reading the inverter
 data from a SolarEdge inverter that has its ModBusTCP interface activated.
 It then connects via TCP and reads the SunSpec modbus registers via ModBusTCP.
-It requires Python 3.6+ to run.
 
-Usage:
+Docker Usage
+---
+```
+docker run -d \ 
+    -e INFLUXDB=<hostname/IP of InfluxDB server - default=localhost> \ 
+    -e INFLUXPORT=<port InfluxDB is running on - default=8086> \ 
+    -e INVERTER=<hostname/IP of SolarEdge Inverter - default=192.168.1.2> \
+    -e INVERTERPORT=<ModbusTCP port on Inverter - default=502> \
+    -e UNITID=<Modbus ID of Inverter - default=1> \
+    alexcpu/solaredge-influxdb
+```
+Please replace user variables in the above command defined by <> with the correct values.  Environment variables can be excluded if the defaults are suitable.
+
+Docker Example
+---
+```
+docker run -d \ 
+    -e INFLUXDB=192.168.1.50 \ 
+    -e INVERTER=192.168.1.200 \
+    alexcpu/solaredge-influxdb
+```
+
+Command Line Usage:
 ------
 `./solaredge.py [inverter IP]`
 
