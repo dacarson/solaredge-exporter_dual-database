@@ -40,44 +40,45 @@ async def write_to_influx(dbhost, dbport, dbname='solaredge'):
             if reg_block:
                 # print(reg_block)
                 data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
-                data.skip_bytes(12)
+                data.skip_bytes(7) # skip to read 40076
                 scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-10)
+				logger.debug(f'AC Current SF: {str(scalefactor)}')
+                data.skip_bytes(-5) # skip back to start at 40072
                 # Register 40072-40075
                 datapoint['fields']['AC Total Current'] = trunc_float(data.decode_16bit_uint() * scalefactor)
                 datapoint['fields']['AC Current phase A'] = trunc_float(data.decode_16bit_uint() * scalefactor)
                 datapoint['fields']['AC Current phase B'] = trunc_float(data.decode_16bit_uint() * scalefactor)
                 datapoint['fields']['AC Current phase C'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                data.skip_bytes(14)
+				data.skip_bytes(7) # skip forward to 40083
                 scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-8)
+				logger.debug(f'AC Voltage SF: {str(scalefactor)}')
+                data.skip_bytes(-4) # skip back to 40080
                 # register 40080-40082
                 datapoint['fields']['AC Voltage phase A'] = trunc_float(data.decode_16bit_uint() * scalefactor)
                 datapoint['fields']['AC Voltage phase B'] = trunc_float(data.decode_16bit_uint() * scalefactor)
                 datapoint['fields']['AC Voltage phase C'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                data.skip_bytes(4)
+                data.skip_bytes(2) # skip forward to 40085
                 scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
+				logger.debug(f'AC Power SF: {str(scalefactor)}')
+                data.skip_bytes(-2) # skip back to 40084
                 # register 40084
                 datapoint['fields']['AC Power output'] = trunc_float(data.decode_16bit_int() * scalefactor)
-                data.skip_bytes(24)
+                data.skip_bytes(13) # skip forward to 40098
                 scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-6)
-                # register 40094
-                datapoint['fields']['AC Lifetimeproduction'] = trunc_float(data.decode_32bit_uint() * scalefactor)
-                data.skip_bytes(2)
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-2)
+				logger.debug(f'DC Current SF: {str(scalefactor)}')
+                data.skip_bytes(-2) # skip back to 40097
                 # register 40097
                 datapoint['fields']['DC Current'] = trunc_float(data.decode_16bit_uint() *scalefactor)
-                data.skip_bytes(4)
+                data.skip_bytes(2) # skip forward to 40100
                 scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
+				logger.debug(f'DC Voltage SF: {str(scalefactor)}')
+                data.skip_bytes(-2) # skip back to 40099
                 # register 40099
                 datapoint['fields']['DC Voltage'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                data.skip_bytes(4)
+                data.skip_bytes(2) # skip forward to 40102
                 scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
+				logger.debug(f'DC Power SF: {str(scalefactor)}')
+                data.skip_bytes(-2) # skip back to 40101
                 # datapoint 40101
                 datapoint['fields']['DC Power input'] = trunc_float(data.decode_16bit_int() * scalefactor)
 
