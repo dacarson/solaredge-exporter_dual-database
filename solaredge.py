@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
 import argparse
 import datetime
 import logging
+import numpy as np
 
 from aiohttp import ClientConnectionError
 from pyModbusTCP.client import ModbusClient
@@ -39,48 +41,104 @@ async def write_to_influx(dbhost, dbport, dbname='solaredge'):
             reg_block = client.read_holding_registers(40069, 38)
             if reg_block:
                 # print(reg_block)
-                data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
-                data.skip_bytes(7) # skip to read 40076
-                scalefactor = 10**data.decode_16bit_int()
-                logger.debug(f'AC Current SF: {str(scalefactor)}')
-                data.skip_bytes(-5) # skip back to start at 40072
-                # Register 40072-40075
-                datapoint['fields']['AC Total Current'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                datapoint['fields']['AC Current phase A'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                datapoint['fields']['AC Current phase B'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                datapoint['fields']['AC Current phase C'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                data.skip_bytes(7) # skip forward to 40083
-                scalefactor = 10**data.decode_16bit_int()
-                logger.debug(f'AC Voltage SF: {str(scalefactor)}')
-                data.skip_bytes(-4) # skip back to 40080
-                # register 40080-40082
-                datapoint['fields']['AC Voltage phase A'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                datapoint['fields']['AC Voltage phase B'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                datapoint['fields']['AC Voltage phase C'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                data.skip_bytes(2) # skip forward to 40085
-                scalefactor = 10**data.decode_16bit_int()
-                logger.debug(f'AC Power SF: {str(scalefactor)}')
-                data.skip_bytes(-2) # skip back to 40084
-                # register 40084
-                datapoint['fields']['AC Power output'] = trunc_float(data.decode_16bit_int() * scalefactor)
-                data.skip_bytes(13) # skip forward to 40098
-                scalefactor = 10**data.decode_16bit_int()
-                logger.debug(f'DC Current SF: {str(scalefactor)}')
-                data.skip_bytes(-2) # skip back to 40097
-                # register 40097
-                datapoint['fields']['DC Current'] = trunc_float(data.decode_16bit_uint() *scalefactor)
-                data.skip_bytes(2) # skip forward to 40100
-                scalefactor = 10**data.decode_16bit_int()
-                logger.debug(f'DC Voltage SF: {str(scalefactor)}')
-                data.skip_bytes(-2) # skip back to 40099
-                # register 40099
-                datapoint['fields']['DC Voltage'] = trunc_float(data.decode_16bit_uint() * scalefactor)
-                data.skip_bytes(2) # skip forward to 40102
-                scalefactor = 10**data.decode_16bit_int()
-                logger.debug(f'DC Power SF: {str(scalefactor)}')
-                data.skip_bytes(-2) # skip back to 40101
-                # datapoint 40101
-                datapoint['fields']['DC Power input'] = trunc_float(data.decode_16bit_int() * scalefactor)
+                # reg_block[0] = Sun Spec DID
+                # reg_block[1] = Length of Model Block
+                # reg_block[2] = AC Total current value
+                # reg_block[3] = AC Phase A current value
+                # reg_block[4] = AC Phase B current value
+                # reg_block[5] = AC Phase C current value
+                # reg_block[6] = AC current scale factor
+                # reg_block[7] = AC Phase A to B voltage value
+                # reg_block[8] = AC Phase B to C voltage value
+                # reg_block[9] = AC Phase C to A voltage value
+                # reg_block[10] = AC Phase A to N voltage value
+                # reg_block[11] = AC Phase B to N voltage value
+                # reg_block[12] = AC Phase C to N voltage value
+                # reg_block[13] = AC voltage scale factor               
+                # reg_block[14] = AC Power value
+                # reg_block[15] = AC Power scale factor
+                # reg_block[27] = DC Current value
+                # reg_block[28] = DC Current scale factor
+                # reg_block[29] = DC Voltage value
+                # reg_block[30] = DC Voltage scale factor
+                # reg_block[31] = DC Power value
+                # reg_block[32] = DC Power scale factor
+                # reg_block[34] = Inverter temp
+                # reg_block[37] = Inverter temp scale factor
+                
+                # AC Current
+                logger.debug(f'Block6: {str(reg_block[6])}')
+                logger.debug(f'AC Current SF: {str(np.int16(reg_block[6]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[6]))
+                logger.debug(f'AC Current mult: {str(scalefactor)}')
+                if reg_block[2]<65535:
+                    datapoint['fields']['AC Total Current'] = trunc_float(reg_block[2] * scalefactor)
+                if reg_block[3] <65535:
+                    datapoint['fields']['AC Current phase A'] = trunc_float(reg_block[3] * scalefactor)
+                if reg_block[4]<65535:
+                    datapoint['fields']['AC Current phase B'] = trunc_float(reg_block[4] * scalefactor)
+                if reg_block[5]<65535:
+                    datapoint['fields']['AC Current phase C'] = trunc_float(reg_block[5] * scalefactor)
+
+                # AC Voltage
+                logger.debug(f'Block13: {str(reg_block[13])}')
+                logger.debug(f'AC Voltage SF: {str(np.int16(reg_block[13]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[13]))
+                logger.debug(f'AC Voltage mult: {str(scalefactor)}')
+                if reg_block[7]<65535:
+                    datapoint['fields']['AC Voltage phase A-B'] = trunc_float(reg_block[7] * scalefactor)
+                if reg_block[8]<65535:
+                    datapoint['fields']['AC Voltage phase B-C'] = trunc_float(reg_block[8] * scalefactor)
+                if reg_block[9]<65535:
+                    datapoint['fields']['AC Voltage phase C-A'] = trunc_float(reg_block[9] * scalefactor)
+                if reg_block[10]<65535:
+                    datapoint['fields']['AC Voltage phase A-N'] = trunc_float(reg_block[10] * scalefactor)
+                if reg_block[11]<65535:
+                    datapoint['fields']['AC Voltage phase B-N'] = trunc_float(reg_block[11] * scalefactor)
+                if reg_block[12]<65535:
+                    datapoint['fields']['AC Voltage phase C-N'] = trunc_float(reg_block[12] * scalefactor)
+
+                # AC Power
+                logger.debug(f'Block15: {str(reg_block[15])}')
+                logger.debug(f'AC Power SF: {str(np.int16(reg_block[15]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[15]))
+                logger.debug(f'AC Power mult: {str(scalefactor)}')
+                if reg_block[14]<65535:
+                    datapoint['fields']['AC Power output'] = trunc_float(reg_block[14] * scalefactor)
+
+                # DC Current
+                logger.debug(f'Block28: {str(reg_block[28])}')
+                logger.debug(f'DC Current SF: {str(np.int16(reg_block[28]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[28]))
+                logger.debug(f'DC Current mult: {str(scalefactor)}')
+                if reg_block[27]<65535:
+                    datapoint['fields']['DC Current'] = trunc_float(reg_block[27] * scalefactor)
+
+                # DC Voltage
+                logger.debug(f'Block30: {str(reg_block[30])}')
+                logger.debug(f'DC voltage SF: {str(np.int16(reg_block[30]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[30]))
+                logger.debug(f'DC Voltage mult: {str(scalefactor)}')
+                if reg_block[29]<65535:
+                    datapoint['fields']['DC Voltage'] = trunc_float(reg_block[29] * scalefactor)
+
+                # DC Power
+                logger.debug(f'Block32: {str(reg_block[32])}')
+                logger.debug(f'DC Power SF: {str(np.int16(reg_block[32]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[32]))
+                logger.debug(f'DC Power mult: {str(scalefactor)}')
+                if reg_block[31]<65535:
+                    datapoint['fields']['DC Power input'] = trunc_float(reg_block[31] * scalefactor)
+                
+                # Inverter Temp 
+                logger.debug(f'Block37: {str(reg_block[37])}')
+                logger.debug(f'Temp SF: {str(np.int16(reg_block[37]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[37]))
+                logger.debug(f'Temp mult: {str(scalefactor)}')
+                if reg_block[34]<65535:
+                    datapoint['fields']['Inverter Temperature'] = trunc_float(reg_block[34] * scalefactor)
+                
+
 
                 datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
