@@ -7,6 +7,7 @@ ENV INFLUXPORT=8086
 ENV INVERTER=192.168.1.2
 ENV INVERTERPORT=502
 ENV UNITID=1
+ENV METERS=0
 
 ADD requirements.txt /
 
@@ -16,4 +17,4 @@ RUN apk add --no-cache --update alpine-sdk && \
 
 ADD solaredge.py /
 
-CMD python3 /solaredge.py --influxdb $INFLUXDB --influxport $INFLUXPORT --port $INVERTERPORT --unitid $UNITID $INVERTER
+CMD python3 /solaredge.py --influxdb $INFLUXDB --influxport $INFLUXPORT --port $INVERTERPORT --unitid $UNITID --meters $METERS $INVERTER
