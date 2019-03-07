@@ -6,6 +6,8 @@ an InfluxDb <https://www.influxdata.com/time-series-platform/influxdb/> for moni
 data from a SolarEdge inverter that has its ModBusTCP interface activated.
 It then connects via TCP and reads the SunSpec modbus registers via ModBusTCP.
 
+See <https://www.solaredge.com/sites/default/files/sunspec-implementation-technical-note.pdf> for details of the SunSpec implementation from solarEdge.
+
 Docker Usage
 ---
 ```
