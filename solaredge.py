@@ -39,7 +39,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
     while True:
         try:
             reg_block = {}
-            reg_block = client.read_holding_registers(40069, 38)
+            reg_block = client.read_holding_registers(40069, 40)
             if reg_block:
                 datapoint = {
                     'measurement': 'SolarEdge',
@@ -65,6 +65,15 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
                 # reg_block[15] = AC Power scale factor
                 # reg_block[16] = AC Frequency value
                 # reg_block[17] = AC Frequency scale factor
+                # reg_block[18] = AC Apparent Power
+                # reg_block[19] = AC Apparent Power scale factor
+                # reg_block[20] = AC Reactive Power
+                # reg_block[21] = AC Reactive Power scale factor
+                # reg_block[22] = AC Power Factor
+                # reg_block[23] = AC Power Factor scale factor
+                # reg_block[24] = AC Lifetime Energy (HI bits)
+                # reg_block[25] = AC Lifetime Energy (LO bits)
+                # reg_block[26] = AC Lifetime Energy scale factor
                 # reg_block[27] = DC Current value
                 # reg_block[28] = DC Current scale factor
                 # reg_block[29] = DC Voltage value
@@ -73,6 +82,8 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
                 # reg_block[32] = DC Power scale factor
                 # reg_block[34] = Inverter temp
                 # reg_block[37] = Inverter temp scale factor
+                # reg_block[38] = Inverter Operating State
+                # reg_block[39] = Inverter Status Code
                 datapoint['tags']['inverter'] = 1
 
                 # AC Current
@@ -81,13 +92,13 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
                 scalefactor = np.float_power(10,np.int16(reg_block[6]))
                 logger.debug(f'AC Current mult: {str(scalefactor)}')
                 if reg_block[2]<65535:
-                    datapoint['fields']['AC Total Current'] = trunc_float(reg_block[2] * scalefactor)
+                    datapoint['fields']['AC_Current'] = trunc_float(reg_block[2] * scalefactor)
                 if reg_block[3] <65535:
-                    datapoint['fields']['AC Current phase A'] = trunc_float(reg_block[3] * scalefactor)
+                    datapoint['fields']['AC_CurrentA'] = trunc_float(reg_block[3] * scalefactor)
                 if reg_block[4]<65535:
-                    datapoint['fields']['AC Current phase B'] = trunc_float(reg_block[4] * scalefactor)
+                    datapoint['fields']['AC_CurrentB'] = trunc_float(reg_block[4] * scalefactor)
                 if reg_block[5]<65535:
-                    datapoint['fields']['AC Current phase C'] = trunc_float(reg_block[5] * scalefactor)
+                    datapoint['fields']['AC_CurrentC'] = trunc_float(reg_block[5] * scalefactor)
 
                 # AC Voltage
                 logger.debug(f'Block13: {str(reg_block[13])}')
@@ -95,25 +106,18 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
                 scalefactor = np.float_power(10,np.int16(reg_block[13]))
                 logger.debug(f'AC Voltage mult: {str(scalefactor)}')
                 if reg_block[7]<65535:
-                    datapoint['fields']['AC Voltage phase A-B'] = trunc_float(reg_block[7] * scalefactor)
+                    datapoint['fields']['AC_VoltageAB'] = trunc_float(reg_block[7] * scalefactor)
                 if reg_block[8]<65535:
-                    datapoint['fields']['AC Voltage phase B-C'] = trunc_float(reg_block[8] * scalefactor)
+                    datapoint['fields']['AC_VoltageBC'] = trunc_float(reg_block[8] * scalefactor)
                 if reg_block[9]<65535:
-                    datapoint['fields']['AC Voltage phase C-A'] = trunc_float(reg_block[9] * scalefactor)
+                    datapoint['fields']['AC_VoltageCA'] = trunc_float(reg_block[9] * scalefactor)
                 if reg_block[10]<65535:
-                    datapoint['fields']['AC Voltage phase A-N'] = trunc_float(reg_block[10] * scalefactor)
+                    datapoint['fields']['AC_VoltageAN'] = trunc_float(reg_block[10] * scalefactor)
                 if reg_block[11]<65535:
-                    datapoint['fields']['AC Voltage phase B-N'] = trunc_float(reg_block[11] * scalefactor)
+                    datapoint['fields']['AC_VoltageBN'] = trunc_float(reg_block[11] * scalefactor)
                 if reg_block[12]<65535:
-                    datapoint['fields']['AC Voltage phase C-N'] = trunc_float(reg_block[12] * scalefactor)
+                    datapoint['fields']['AC_VoltageCN'] = trunc_float(reg_block[12] * scalefactor)
 
-                # AC Frequency
-                logger.debug(f'AC Frequency SF: {str(np.int16(reg_block[17]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[17]))
-                if reg_block[16]<65535:
-                    datapoint['fields']['AC Frequency'] = trunc_float(reg_block[16] * scalefactor)
-
-                    
                 # AC Power
                 logger.debug(f'Block15: {str(reg_block[15])}')
                 logger.debug(f'AC Power SF: {str(np.int16(reg_block[15]))}')
@@ -121,7 +125,37 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
                 logger.debug(f'AC Power mult: {str(scalefactor)}')
                 if reg_block[14]<65535:
                     datapoint['fields']['AC Power output'] = trunc_float(reg_block[14] * scalefactor)
+                    
+                # AC Frequency
+                logger.debug(f'AC Frequency SF: {str(np.int16(reg_block[17]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[17]))
+                if reg_block[16]<65535:
+                    datapoint['fields']['AC_Frequency'] = trunc_float(reg_block[16] * scalefactor)
 
+                # AC Apparent Power
+                logger.debug(f'Apparent Power SF: {str(np.int16(reg_block[19]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[19]))
+                if reg_block[18]<65535:
+                    datapoint['fields']['AC_VA'] = trunc_float(reg_block[18] * scalefactor)                    
+
+                # AC Reactive Power
+                logger.debug(f'Reactive Power SF: {str(np.int16(reg_block[21]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[21]))
+                if reg_block[20]<65535:
+                    datapoint['fields']['AC_VAR'] = trunc_float(reg_block[20] * scalefactor)                    
+
+                # AC Power Factor
+                logger.debug(f'Power Factor SF: {str(np.int16(reg_block[23]))}')
+                scalefactor = np.float_power(10,np.int16(reg_block[23]))
+                if reg_block[22]<65535:
+                    datapoint['fields']['AC_PF'] = trunc_float(reg_block[22] * scalefactor)                    
+
+                # AC Lifetime Energy Production
+                logger.debug(f'Lifetime Energy Production SF: {str(np.uint16(reg_block[26]))}')
+                scalefactor = np.float_power(10,np.uint16(reg_block[26]))
+                #if reg_block[24]<65535:
+                datapoint['fields']['AC_Energy_WH'] = trunc_float(((reg_block[24] << 16) + reg_block[25]) * scalefactor)   
+                    
                 # DC Current
                 logger.debug(f'Block28: {str(reg_block[28])}')
                 logger.debug(f'DC Current SF: {str(np.int16(reg_block[28]))}')
@@ -154,6 +188,16 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
                 if reg_block[34]<65535:
                     datapoint['fields']['Inverter Temperature'] = trunc_float(reg_block[34] * scalefactor)
 
+                # Inverter Operating State
+                logger.debug(f'Operating State: {str(np.uint16(reg_block[38]))}')
+                if reg_block[28]<65535:
+                    datapoint['fields']['Status'] = trunc_float(reg_block[38])                    
+
+                # Inverter Operating Status Code
+                logger.debug(f'Operating Status Code: {str(np.uint16(reg_block[39]))}')
+                if reg_block[39]<65535:
+                    datapoint['fields']['Status_Vendor'] = trunc_float(reg_block[38])                     
+                    
                 datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
 
@@ -184,11 +228,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
 
                 # Start point is different for each meter
                 if x==1:
-                    reg_block = client.read_holding_registers(40190, 36)
+                    reg_block = client.read_holding_registers(40190, 103)
                 if x==2:
-                    reg_block = client.read_holding_registers(40364, 36)
+                    reg_block = client.read_holding_registers(40364, 103)
                 if x==3:
-                    reg_block = client.read_holding_registers(40539, 36)
+                    reg_block = client.read_holding_registers(40539, 103)
                 if reg_block:
                     # print(reg_block)
                     # reg_block[0] = AC Total current value
