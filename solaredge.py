@@ -196,7 +196,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredge'):
                 # Inverter Operating Status Code
                 logger.debug(f'Operating Status Code: {str(np.uint16(reg_block[39]))}')
                 if reg_block[39]<65535:
-                    datapoint['fields']['Status_Vendor'] = trunc_float(reg_block[38])                     
+                    datapoint['fields']['Status_Vendor'] = trunc_float(reg_block[39])                     
                     
                 datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
