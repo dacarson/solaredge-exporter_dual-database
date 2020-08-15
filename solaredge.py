@@ -2,7 +2,6 @@
 import argparse
 import datetime
 import logging
-import numpy as np
 
 from aiohttp import ClientConnectionError
 from pyModbusTCP.client import ModbusClient
@@ -10,6 +9,8 @@ from pymodbus.constants import Endian
 from pymodbus.payload import BinaryPayloadDecoder
 import asyncio
 from aioinflux import InfluxDBClient, InfluxDBWriteError
+from prometheus_client import Gauge
+from prometheus_client import start_http_server
 
 datapoint = {
     'measurement': 'SolarEdge',
@@ -19,8 +20,7 @@ datapoint = {
 reg_block = {}
 logger = logging.getLogger('solaredge')
 
-
-async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
+async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
     global client
     global datapoint
     global reg_block
@@ -34,18 +34,189 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
     except ClientConnectionError as e:
         logger.error(f'Error during connection to InfluxDb {dbhost}: {e}')
         return
-
     logger.info('Database opened and initialized')
+ 
+    # Read the common blocks on the Inverter (and meters if present)
+    while True:
+        reg_block = {}
+        reg_block = client.read_holding_registers(40004, 65)
+        if reg_block:
+            decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
+            InvManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
+            InvModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
+            Invfoo = decoder.decode_string(16).decode('UTF-8')
+            InvVersion = decoder.decode_string(16).decode('UTF-8') #decoder.decode_bits()
+            InvSerialNumber = decoder.decode_string(32).decode('UTF-8')
+            InvDeviceAddress = decoder.decode_16bit_uint()
+
+            print('*' * 60)
+            print('* Inverter Info')
+            print('*' * 60)
+            print(' Manufacturer: ' + InvManufacturer)
+            print(' Model: ' + InvModel)
+            print(' Version: ' + InvVersion)
+            print(' Serial Number: ' + InvSerialNumber)
+            print(' ModBus ID: ' + str(InvDeviceAddress))
+            break
+        else:
+            # Error during data receive
+            if client.last_error() == 2:
+                logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
+            elif client.last_error() == 3 or client.last_error() == 4:
+                logger.error('Send or receive error!')
+            elif client.last_error() == 5:
+                logger.error('Timeout during send or receive operation!')
+    while True:
+        dictMeterLabel = []
+        for x in range(1, mbmeters+1):
+            reg_block = {}
+            if x==1:
+                reg_block = client.read_holding_registers(40123, 65)
+            if x==2:
+                reg_block = client.read_holding_registers(40297, 65)
+            if x==3:
+                reg_block = client.read_holding_registers(40471, 65)       
+            if reg_block:
+                decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
+                MManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
+                MModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
+                MOption = decoder.decode_string(16).decode('UTF-8')
+                MVersion = decoder.decode_string(16).decode('UTF-8') #decoder.decode_bits()
+                MSerialNumber = decoder.decode_string(32).decode('UTF-8')
+                MDeviceAddress = decoder.decode_16bit_uint()
+                fooLabel = MManufacturer.split('\x00')[0] + '(' + MSerialNumber.split('\x00')[0] + ')'
+                dictMeterLabel.append(fooLabel)
+                print('*' * 60)
+                print('* Meter ' + str(x) + ' Info')
+                print('*' * 60)
+                print(' Manufacturer: ' + MManufacturer)
+                print(' Model: ' + MModel)
+                print(' Mode: ' + MOption)
+                print(' Version: ' + MVersion)
+                print(' Serial Number: ' + MSerialNumber)
+                print(' ModBus ID: ' + str(MDeviceAddress))
+                if x==mbmeters:
+                    print('*' * 60)
+                connflag = True
+            else:
+                # Error during data receive
+                if client.last_error() == 2:
+                    logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
+                elif client.last_error() == 3 or client.last_error() == 4:
+                    logger.error('Send or receive error!')
+                elif client.last_error() == 5:
+                    logger.error('Timeout during send or receive operation!')
+        if connflag:
+            break
+
+    # Define the Modbus Prometheus metrics - Inverter Metrics
+    SunSpec_DID = Gauge('SunSpec_DID', '101 = single phase 102 = split phase1 103 = three phase')
+    SunSpec_Length = Gauge('SunSpec_Length', 'Registers 50 = Length of model block')
+    AC_Current = Gauge('AC_Current', 'Amps AC Total Current value')
+    AC_CurrentA = Gauge('AC_CurrentA', 'Amps AC Phase A Current value')
+    AC_CurrentB = Gauge('AC_CurrentB', 'Amps AC Phase B Current value')
+    AC_CurrentC = Gauge('AC_CurrentC', 'Amps AC Phase C Current value')
+    AC_Current_SF = Gauge('AC_Current_SF', 'AC Current scale factor')
+    AC_VoltageAB = Gauge('AC_VoltageAB', 'Volts AC Voltage Phase AB value')
+    AC_VoltageBC = Gauge('AC_VoltageBC', 'Volts AC Voltage Phase BC value')
+    AC_VoltageCA = Gauge('AC_VoltageCA', 'Volts AC Voltage Phase CA value')
+    AC_VoltageAN = Gauge('AC_VoltageAN',' Volts AC Voltage Phase A to N value')
+    AC_VoltageBN = Gauge('AC_VoltageBN', 'Volts AC Voltage Phase B to N value')
+    AC_VoltageCN = Gauge('AC_VoltageCN', 'Volts AC Voltage Phase C to N value')
+    AC_Voltage_SF = Gauge('AC_Voltage_SF', 'AC Voltage scale factor')
+    AC_Power = Gauge('AC_Power', 'Watts AC Power value')
+    AC_Power_SF = Gauge('AC_Power_SF', 'AC Power scale factor')
+    AC_Frequency = Gauge('AC_Frequency', 'Hertz AC Frequency value')
+    AC_Frequency_SF = Gauge('AC_Frequency_SF', 'Scale factor')
+    AC_VA = Gauge('AC_VA', 'VA Apparent Power')
+    AC_VA_SF = Gauge('AC_VA_SF', 'Scale factor')
+    AC_VAR = Gauge('AC_VAR', 'VAR Reactive Power')
+    AC_VAR_SF = Gauge('AC_VAR_SF', 'Scale factor')
+    AC_PF = Gauge('AC_PF', '% Power Factor')
+    AC_PF_SF = Gauge('AC_PF_SF', 'Scale factor')
+    AC_Energy_WH = Gauge('AC_Energy_WH', 'WattHours AC Lifetime Energy production')
+    AC_Energy_WH_SF = Gauge('AC_Energy_WH_SF', 'Scale factor')
+    DC_Current = Gauge('DC_Current', 'Amps DC Current value')
+    DC_Current_SF = Gauge('DC_Current_SF', 'Scale factor')
+    DC_Voltage = Gauge('DC_Voltage', 'Volts DC Voltage value')
+    DC_Voltage_SF = Gauge('DC_Voltage_SF', 'Scale factor')
+    DC_Power = Gauge('DC_Power', 'Watts DC Power value')
+    DC_Power_SF = Gauge('DC_Power_SF', 'Scale factor')
+    Temp_Sink = Gauge('Temp_Sink', 'Degrees C Heat Sink Temperature')
+    Temp_SF = Gauge('Temp_SF', 'Scale factor')
+    Status = Gauge('Status', 'Operating State')
+    Status_Vendor = Gauge('Status_Vendor', 'Vendor-defined operating state and error codes. For error description, meaning and troubleshooting, refer to the SolarEdge Installation Guide.')
+
+    AC_Current_SF.set(0)
+    AC_Voltage_SF.set(0)
+    AC_Power_SF.set(0)
+    AC_Frequency_SF.set(0)
+    AC_VA_SF.set(0)
+    AC_VAR_SF.set(0)
+    AC_PF_SF.set(0)
+    AC_Energy_WH_SF.set(0)
+    DC_Current_SF.set(0)
+    DC_Voltage_SF.set(0)
+    DC_Power_SF.set(0)
+    Temp_SF.set(0)
+
+    # Define the Modbus Prometheus metrics - Meter Metrics (if present)
+    if mbmeters >= 1:
+        M_SunSpec_DID = Gauge('M_SunSpec_DID', '', ['meter'])
+        M_SunSpec_Length = Gauge('M_SunSpec_Length','', ['meter'])
+        M_AC_Current = Gauge('M_AC_Current', 'Amps AC Total Current value', ['meter'])
+        M_AC_CurrentA = Gauge('M_AC_CurrentA', 'Amps AC Phase A Current value', ['meter'])
+        M_AC_CurrentB = Gauge('M_AC_CurrentB', 'Amps AC Phase B Current value', ['meter'])
+        M_AC_CurrentC = Gauge('M_AC_CurrentC', 'Amps AC Phase C Current value', ['meter'])
+        M_AC_Current_SF = Gauge('M_AC_Current_SF', 'AC Current scale factor', ['meter'])
+        M_AC_VoltageLN = Gauge('M_AC_VoltageLN', 'Volts AC Voltage Phase AB value', ['meter'])
+        M_AC_VoltageAN = Gauge('M_AC_VoltageAN', 'Volts AC Voltage Phase BC value', ['meter'])
+        M_AC_VoltageBN = Gauge('M_AC_VoltageBN', 'Volts AC Voltage Phase BC value', ['meter'])
+        M_AC_VoltageCN = Gauge('M_AC_VoltageCN', 'Volts AC Voltage Phase BC value', ['meter'])
+        M_AC_VoltageLL = Gauge('M_AC_VoltageLL', 'Volts AC Voltage Phase BC value', ['meter'])
+        M_AC_VoltageAB = Gauge('M_AC_VoltageAB', 'Volts AC Voltage Phase BC value', ['meter'])
+        M_AC_VoltageBC = Gauge('M_AC_VoltageBC', 'Volts AC Voltage Phase BC value', ['meter'])
+        M_AC_VoltageCA = Gauge('M_AC_VoltageCA', 'Volts AC Voltage Phase BC value', ['meter'])
+        M_AC_Voltage_SF = Gauge('M_AC_Voltage_SF', 'AC Voltage scale factor', ['meter'])
+        M_AC_Frequency = Gauge('M_AC_Frequency', 'Hertz AC Frequency value', ['meter'])
+        M_AC_Frequency_SF = Gauge('M_AC_Frequency_SF', 'Scale factor', ['meter'])
+        M_AC_Power = Gauge('M_AC_Power', 'Watts AC Power value', ['meter'])
+        M_AC_Power_A = Gauge('M_AC_Power_A', 'Watts AC Power value', ['meter'])
+        M_AC_Power_B = Gauge('M_AC_Power_B', 'Watts AC Power value', ['meter'])
+        M_AC_Power_C = Gauge('M_AC_Power_C', 'Watts AC Power value', ['meter'])
+        M_AC_Power_SF = Gauge('M_AC_Power_SF', 'AC Power scale factor', ['meter'])
+        M_AC_VA = Gauge('M_AC_VA', 'VA Apparent Power', ['meter'])
+        M_AC_VA_A = Gauge('M_AC_VA_A', 'VA Apparent Power', ['meter'])
+        M_AC_VA_B = Gauge('M_AC_VA_B', 'VA Apparent Power', ['meter'])
+        M_AC_VA_C = Gauge('M_AC_VA_C', 'VA Apparent Power', ['meter'])
+        M_AC_VA_SF = Gauge('M_AC_VA_SF', 'Scale factor', ['meter'])
+        M_AC_VAR = Gauge('M_AC_VAR', 'VAR Reactive Power', ['meter'])
+        M_AC_VAR_A = Gauge('M_AC_VAR_A', 'VAR Reactive Power', ['meter'])
+        M_AC_VAR_B = Gauge('M_AC_VAR_B', 'VAR Reactive Power', ['meter'])
+        M_AC_VAR_C = Gauge('M_AC_VAR_C', 'VAR Reactive Power', ['meter'])
+        M_AC_VAR_SF = Gauge('M_AC_VAR_SF', 'Scale factor', ['meter'])
+        M_AC_PF = Gauge('M_AC_PF', '% Power Factor', ['meter'])
+        M_AC_PF_A = Gauge('M_AC_PF_A', '% Power Factor', ['meter'])
+        M_AC_PF_B = Gauge('M_AC_PF_B', '% Power Factor', ['meter'])
+        M_AC_PF_C = Gauge('M_AC_PF_C', '% Power Factor', ['meter'])
+        M_AC_PF_SF = Gauge('M_AC_PF_SF', 'Scale factor', ['meter'])
+        M_Exported = Gauge('M_Exported', 'WattHours AC Exported', ['meter'])
+        M_Exported_A = Gauge('M_Exported_A', 'WattHours AC Exported', ['meter'])
+        M_Exported_B = Gauge('M_Exported_B', 'WattHours AC Exported', ['meter'])
+        M_Exported_C = Gauge('M_Exported_C', 'WattHours AC Exported', ['meter'])
+        M_Imported = Gauge('M_Imported', 'WattHours AC Imported', ['meter'])
+        M_Imported_A = Gauge('M_Imported_A', 'WattHours AC Imported', ['meter'])
+        M_Imported_B = Gauge('M_Imported_B', 'WattHours AC Imported', ['meter'])
+        M_Imported_C = Gauge('M_Imported_C', 'WattHours AC Imported', ['meter'])
+        M_Energy_W_SF = Gauge('M_Energy_W_SF', 'M_Energy_W_SF', ['meter'])
+            
+    # Start the loop for collecting the metrics...
     while True:
         try:
             reg_block = {}
+            dictInv = {}
             reg_block = client.read_holding_registers(40069, 40)
             if reg_block:
-                datapoint = {
-                    'measurement': 'SolarEdge',
-                    'tags': {},
-                    'fields': {}
-                }
                 # print(reg_block)
                 # reg_block[0] = Sun Spec DID
                 # reg_block[1] = Length of Model Block
@@ -84,124 +255,289 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
                 # reg_block[37] = Inverter temp scale factor
                 # reg_block[38] = Inverter Operating State
                 # reg_block[39] = Inverter Status Code
+                datapoint = {
+                    'measurement': 'SolarEdge',
+                    'tags': {},
+                    'fields': {}
+                }
                 logger.debug(f'inverter reg_block: {str(reg_block)}')
-                datapoint['tags']['inverter'] = 1
+                datapoint['tags']['inverter'] = str(1)
 
+                data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
                 # AC Current
-                logger.debug(f'Block6: {str(reg_block[6])}')
-                logger.debug(f'AC Current SF: {str(np.int16(reg_block[6]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[6]))
-                logger.debug(f'AC Current mult: {str(scalefactor)}')
-                if reg_block[2]<65535:
-                    datapoint['fields']['AC_Current'] = trunc_float(reg_block[2] * scalefactor)
-                if reg_block[3] <65535:
-                    datapoint['fields']['AC_CurrentA'] = trunc_float(reg_block[3] * scalefactor)
-                if reg_block[4]<65535:
-                    datapoint['fields']['AC_CurrentB'] = trunc_float(reg_block[4] * scalefactor)
-                if reg_block[5]<65535:
-                    datapoint['fields']['AC_CurrentC'] = trunc_float(reg_block[5] * scalefactor)
+                data.skip_bytes(12)
+                # Register 40075
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-10)
+                # Register 40071-40074
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_Current'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_Current.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_CurrentA'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_CurrentA.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_CurrentB'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_CurrentB.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_CurrentC'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_CurrentC.set(dictInv[fooName])
 
                 # AC Voltage
-                logger.debug(f'Block13: {str(reg_block[13])}')
-                logger.debug(f'AC Voltage SF: {str(np.int16(reg_block[13]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[13]))
-                logger.debug(f'AC Voltage mult: {str(scalefactor)}')
-                if reg_block[7]<65535:
-                    datapoint['fields']['AC_VoltageAB'] = trunc_float(reg_block[7] * scalefactor)
-                if reg_block[8]<65535:
-                    datapoint['fields']['AC_VoltageBC'] = trunc_float(reg_block[8] * scalefactor)
-                if reg_block[9]<65535:
-                    datapoint['fields']['AC_VoltageCA'] = trunc_float(reg_block[9] * scalefactor)
-                if reg_block[10]<65535:
-                    datapoint['fields']['AC_VoltageAN'] = trunc_float(reg_block[10] * scalefactor)
-                if reg_block[11]<65535:
-                    datapoint['fields']['AC_VoltageBN'] = trunc_float(reg_block[11] * scalefactor)
-                if reg_block[12]<65535:
-                    datapoint['fields']['AC_VoltageCN'] = trunc_float(reg_block[12] * scalefactor)
+                data.skip_bytes(14)
+                # Register 40082
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-14)
+                # Register 40077
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_VoltageAB'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VoltageAB.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_VoltageBC'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VoltageBC.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_VoltageCA'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VoltageCA.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_VoltageAN'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VoltageAN.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_VoltageBN'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VoltageBN.set(dictInv[fooName])
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_VoltageCN'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VoltageCN.set(dictInv[fooName])
 
                 # AC Power
-                logger.debug(f'Block15: {str(reg_block[15])}')
-                logger.debug(f'AC Power SF: {str(np.int16(reg_block[15]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[15]))
-                logger.debug(f'AC Power mult: {str(scalefactor)}')
-                if reg_block[14]<65535:
-                    datapoint['fields']['AC_Power'] = trunc_float(reg_block[14] * scalefactor)
-                    
-                # AC Frequency
-                logger.debug(f'AC Frequency SF: {str(np.int16(reg_block[17]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[17]))
-                if reg_block[16]<65535:
-                    datapoint['fields']['AC_Frequency'] = trunc_float(reg_block[16] * scalefactor)
+                data.skip_bytes(4)
+                # Register 40084
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40083
+                fooVal = trunc_float(data.decode_16bit_int())
+                fooName = 'AC_Power'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_Power.set(dictInv[fooName])
+
+               # AC Frequency
+                data.skip_bytes(4)
+                # Register 40086
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40085
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'AC_Frequency'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_Frequency.set(dictInv[fooName])
 
                 # AC Apparent Power
-                logger.debug(f'Apparent Power SF: {str(np.int16(reg_block[19]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[19]))
-                if reg_block[18]<65535:
-                    datapoint['fields']['AC_VA'] = trunc_float(reg_block[18] * scalefactor)                    
-
+                data.skip_bytes(4)
+                # Register 40088
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40087
+                fooVal = trunc_float(data.decode_16bit_int())
+                fooName = 'AC_VA'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VA.set(dictInv[fooName])
+                
                 # AC Reactive Power
-                logger.debug(f'Reactive Power SF: {str(np.int16(reg_block[21]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[21]))
-                if reg_block[20]<65535:
-                    datapoint['fields']['AC_VAR'] = trunc_float(reg_block[20] * scalefactor)                    
-
+                data.skip_bytes(4)
+                # Register 40090
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40089
+                fooVal = trunc_float(data.decode_16bit_int())
+                fooName = 'AC_VAR'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_VAR.set(dictInv[fooName])
+                
                 # AC Power Factor
-                logger.debug(f'Power Factor SF: {str(np.int16(reg_block[23]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[23]))
-                if reg_block[22]<65535:
-                    datapoint['fields']['AC_PF'] = trunc_float(reg_block[22] * scalefactor)                    
+                data.skip_bytes(4)
+                # Register 40092
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40091
+                fooVal = trunc_float(data.decode_16bit_int())
+                fooName = 'AC_PF'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_PF.set(dictInv[fooName])
 
                 # AC Lifetime Energy Production
-                logger.debug(f'Lifetime Energy Production SF: {str(np.uint16(reg_block[26]))}')
-                scalefactor = np.float_power(10,np.uint16(reg_block[26]))
-                if reg_block[24]<65535:
-                    datapoint['fields']['AC_Energy_WH'] = trunc_float(((reg_block[24] << 16) + reg_block[25]) * scalefactor)   
-                    
+                data.skip_bytes(6)
+                # Register 40095
+                scalefactor = 10**data.decode_16bit_uint()
+                data.skip_bytes(-6)
+                # Register 40093
+                fooVal = trunc_float(data.decode_32bit_uint())
+                fooName = 'AC_Energy_WH'
+                if fooVal < 4294967295:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                AC_Energy_WH.set(dictInv[fooName])
+                
                 # DC Current
-                logger.debug(f'Block28: {str(reg_block[28])}')
-                logger.debug(f'DC Current SF: {str(np.int16(reg_block[28]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[28]))
-                logger.debug(f'DC Current mult: {str(scalefactor)}')
-                if reg_block[27]<65535:
-                    datapoint['fields']['DC_Current'] = trunc_float(reg_block[27] * scalefactor)
+                data.skip_bytes(4)
+                # Register 40097
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40096
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'DC_Current'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                DC_Current.set(dictInv[fooName])
 
                 # DC Voltage
-                logger.debug(f'Block30: {str(reg_block[30])}')
-                logger.debug(f'DC voltage SF: {str(np.int16(reg_block[30]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[30]))
-                logger.debug(f'DC Voltage mult: {str(scalefactor)}')
-                if reg_block[29]<65535:
-                    datapoint['fields']['DC_Voltage'] = trunc_float(reg_block[29] * scalefactor)
+                data.skip_bytes(4)
+                # Register 40099
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40098
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'DC_Voltage'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                DC_Voltage.set(dictInv[fooName])
 
                 # DC Power
-                logger.debug(f'Block32: {str(reg_block[32])}')
-                logger.debug(f'DC Power SF: {str(np.int16(reg_block[32]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[32]))
-                logger.debug(f'DC Power mult: {str(scalefactor)}')
-                if reg_block[31]<65535:
-                    datapoint['fields']['DC_Power'] = trunc_float(reg_block[31] * scalefactor)
-
+                data.skip_bytes(4)
+                # Register 40101
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-4)
+                # Register 40100
+                fooVal = trunc_float(data.decode_16bit_int())
+                fooName = 'DC_Power'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                DC_Power.set(dictInv[fooName])
+                
                 # Inverter Temp 
-                logger.debug(f'Block37: {str(reg_block[37])}')
-                logger.debug(f'Temp SF: {str(np.int16(reg_block[37]))}')
-                scalefactor = np.float_power(10,np.int16(reg_block[37]))
-                logger.debug(f'Temp mult: {str(scalefactor)}')
-                if reg_block[34]<65535:
-                    datapoint['fields']['Temp_Sink'] = trunc_float(reg_block[34] * scalefactor)
-
+                data.skip_bytes(10)
+                # Register 40106
+                scalefactor = 10**data.decode_16bit_int()
+                data.skip_bytes(-8)
+                # Register 40103
+                fooVal = trunc_float(data.decode_16bit_int())
+                fooName = 'Temp_Sink'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal * scalefactor
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                Temp_Sink.set(dictInv[fooName])
+                
                 # Inverter Operating State
-                logger.debug(f'Operating State: {str(np.uint16(reg_block[38]))}')
-                if reg_block[38]<65535:
-                    datapoint['fields']['Status'] = trunc_float(reg_block[38])                    
-
+                data.skip_bytes(6)
+                # Register 40107
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'Status'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                Status.set(dictInv[fooName])
+                
                 # Inverter Operating Status Code
-                logger.debug(f'Operating Status Code: {str(np.uint16(reg_block[39]))}')
-                if reg_block[39]<65535:
-                    datapoint['fields']['Status_Vendor'] = trunc_float(reg_block[39])                     
-                    
+                # Register 40108
+                fooVal = trunc_float(data.decode_16bit_uint())
+                fooName = 'Status_Vendor'
+                if fooVal < 65535:
+                    dictInv[fooName] = fooVal
+                else:
+                    dictInv[fooName] = 0.0
+                datapoint['fields'][fooName] = dictInv[fooName]
+                Status_Vendor.set(dictInv[fooName])
+                
                 datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
-                logger.debug(f'Writing to Influx: {str(datapoint)}')
 
+                logger.debug(f'Inverter')
+                for j, k in dictInv.items():
+                    logger.debug(f'  {j}: {k}')
+                    
+                logger.debug(f'Writing to Influx: {str(datapoint)}')
                 await solar_client.write(datapoint)
 
             else:
@@ -217,15 +553,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
                 # Now loop through this for each meter that is attached.
                 logger.debug(f'Meter={str(x)}')
                 reg_block = {}
-                
-                # Clear data from inverter, otherwise we publish that again!
-                datapoint = {
-                    'measurement': 'SolarEdge',
-                    'tags': {
-                        'meter': x
-                    },
-                    'fields': {}
-                }
+                dictM = {}
 
                 # Start point is different for each meter
                 if x==1:
@@ -291,80 +619,371 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
                     # reg_block[67] = Phase C Imported Real Energy
                     # reg_block[69] = Real Energy scale factor
                     logger.debug(f'meter reg_block: {str(reg_block)}')
-
+                
+                    # Set the Label to use for the Meter Metrics for Prometheus
+                    metriclabel = dictMeterLabel[x-1]
+                    # Clear data from inverter, otherwise we publish that again!
+                    datapoint = {
+                        'measurement': 'SolarEdge',
+                        'tags': {
+                            'meter': dictMeterLabel[x-1]
+                        },
+                        'fields': {}
+                    }
+                    
+                    data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
                     # AC Current
-                    logger.debug(f'AC Current SF: {str(np.int16(reg_block[4]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[4]))
-                    if reg_block[0]<65535:
-                        datapoint['fields']['M_AC_Current'] = trunc_float(np.int16(reg_block[0]) * scalefactor)
-                    if reg_block[1]<65535:
-                        datapoint['fields']['M_AC_Current_A'] = trunc_float(np.int16(reg_block[1]) * scalefactor)
-                    if reg_block[2]<65535:
-                        datapoint['fields']['M_AC_Current_B'] = trunc_float(np.int16(reg_block[2]) * scalefactor)
-                    if reg_block[3]<65535:
-                        datapoint['fields']['M_AC_Current_C'] = trunc_float(np.int16(reg_block[3]) * scalefactor)
+                    data.skip_bytes(8)
+                    # Register 40194
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-10)
+                    # Register 40190-40193
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_Current'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_Current.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_CurrentA'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_CurrentA.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_CurrentB'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_CurrentB.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_CurrentC'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_CurrentC.labels(metriclabel).set(dictM[fooName])
 
-                    # AC Voltage
-                    logger.debug(f'AC Voltage SF: {str(np.int16(reg_block[13]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[13]))
-                    datapoint['fields']['M_AC_Voltage_LN'] = trunc_float(np.int16(reg_block[5]) * scalefactor)
-                    datapoint['fields']['M_AC_Voltage_AN'] = trunc_float(np.int16(reg_block[6]) * scalefactor)
-                    datapoint['fields']['M_AC_Voltage_BN'] = trunc_float(np.int16(reg_block[7]) * scalefactor)
-                    datapoint['fields']['M_AC_Voltage_CN'] = trunc_float(np.int16(reg_block[8]) * scalefactor)
-                    datapoint['fields']['M_AC_Voltage_LL'] = trunc_float(np.int16(reg_block[9]) * scalefactor)
-                    datapoint['fields']['M_AC_Voltage_AB'] = trunc_float(np.int16(reg_block[10]) * scalefactor)
-                    datapoint['fields']['M_AC_Voltage_BC'] = trunc_float(np.int16(reg_block[11]) * scalefactor)
-                    datapoint['fields']['M_AC_Voltage_CA'] = trunc_float(np.int16(reg_block[12]) * scalefactor)
+                   # AC Voltage
+                    data.skip_bytes(18)
+                    # Register 40203
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-18)
+                    # Register 40195-40202
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageLN'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageLN.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageAN'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageAN.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageBN'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageBN.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageCN'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageCN.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageLL'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageLL.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageAB'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageAB.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageBC'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageBC.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VoltageCA'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VoltageCA.labels(metriclabel).set(dictM[fooName])
 
                     # AC Frequency
-                    logger.debug(f'AC Frequency SF: {str(np.int16(reg_block[15]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[15]))
-                    datapoint['fields']['M_AC_Freq'] = trunc_float(np.int16(reg_block[14]) * scalefactor)
+                    data.skip_bytes(4)
+                    # Register 40205
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-4)
+                    # Register 40204
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_Frequency'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_Frequency.labels(metriclabel).set(dictM[fooName])
                     
                     # AC Real Power
-                    logger.debug(f'AC Real Power SF: {str(np.int16(reg_block[20]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[20]))
-                    datapoint['fields']['M_AC_Power'] = trunc_float(np.int16(reg_block[16]) * scalefactor)
-                    datapoint['fields']['M_AC_Power_A'] = trunc_float(np.int16(reg_block[17]) * scalefactor)
-                    datapoint['fields']['M_AC_Power_B'] = trunc_float(np.int16(reg_block[18]) * scalefactor)
-                    datapoint['fields']['M_AC_Power_C'] = trunc_float(np.int16(reg_block[19]) * scalefactor)
+                    data.skip_bytes(10)
+                    # Register 40210
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-10)
+                    # Register 40206-40209
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_Power'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_Power.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_Power_A'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_Power_A.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_Power_B'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_Power_B.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_Power_C'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_Power_C.labels(metriclabel).set(dictM[fooName])
                     
                     # AC Apparent Power
-                    logger.debug(f'AC Apparent Power SF: {str(np.int16(reg_block[25]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[25]))
-                    datapoint['fields']['M_AC_VA'] = trunc_float(np.int16(reg_block[21]) * scalefactor)
-                    datapoint['fields']['M_AC_VA_A'] = trunc_float(np.int16(reg_block[22]) * scalefactor)
-                    datapoint['fields']['M_AC_VA_B'] = trunc_float(np.int16(reg_block[23]) * scalefactor)
-                    datapoint['fields']['M_AC_VA_C'] = trunc_float(np.int16(reg_block[24]) * scalefactor)
+                    data.skip_bytes(10)
+                    # Register 40215
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-10)
+                    # Register 40211-40214
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VA'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VA.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VA_A'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VA_A.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VA_B'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VA_B.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VA_C'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VA_C.labels(metriclabel).set(dictM[fooName])
 
                     # AC Reactive Power
-                    logger.debug(f'AC Reactive Power SF: {str(np.int16(reg_block[30]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[30]))
-                    datapoint['fields']['M_AC_VAR'] = trunc_float(np.int16(reg_block[26]) * scalefactor)
-                    datapoint['fields']['M_AC_VAR_A'] = trunc_float(np.int16(reg_block[27]) * scalefactor)
-                    datapoint['fields']['M_AC_VAR_B'] = trunc_float(np.int16(reg_block[28]) * scalefactor)
-                    datapoint['fields']['M_AC_VAR_C'] = trunc_float(np.int16(reg_block[29]) * scalefactor)
+                    data.skip_bytes(10)
+                    # Register 40220
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-10)
+                    # Register 40216-40219
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VAR'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VAR.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VAR_A'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VAR_A.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VAR_B'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VAR_B.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_VAR_C'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_VAR_C.labels(metriclabel).set(dictM[fooName])
 
                     # AC Power Factor
-                    logger.debug(f'AC Power Factor SF: {str(np.int16(reg_block[30]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[35]))
-                    datapoint['fields']['M_AC_PF'] = trunc_float(np.int16(reg_block[31]) * scalefactor)
-                    datapoint['fields']['M_AC_PF_A'] = trunc_float(np.int16(reg_block[32]) * scalefactor)
-                    datapoint['fields']['M_AC_PF_B'] = trunc_float(np.int16(reg_block[33]) * scalefactor)
-                    datapoint['fields']['M_AC_PF_C'] = trunc_float(np.int16(reg_block[34]) * scalefactor)
+                    data.skip_bytes(10)
+                    # Register 40225
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-10)
+                    # Register 40221-40224
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_PF'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_PF.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_PF_A'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_PF_A.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_PF_B'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_PF_B.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooName = 'M_AC_PF_C'
+                    if fooVal < 32768:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_AC_PF_C.labels(metriclabel).set(dictM[fooName])
 
                     # Accumulated AC Real Energy
-                    logger.debug(f'Real Energy SF: {str(np.int16(reg_block[52]))}')
-                    scalefactor = np.float_power(10,np.int16(reg_block[52]))
-                    datapoint['fields']['M_Exported'] = trunc_float(((reg_block[36] << 16) + reg_block[37]) * scalefactor) 
-                    datapoint['fields']['M_Exported_A'] = trunc_float(((reg_block[38] << 16) + reg_block[39]) * scalefactor)
-                    datapoint['fields']['M_Exported_B'] = trunc_float(((reg_block[40] << 16) + reg_block[41]) * scalefactor)
-                    datapoint['fields']['M_Exported_C'] = trunc_float(((reg_block[42] << 16) + reg_block[43]) * scalefactor)
-                    datapoint['fields']['M_Imported'] = trunc_float(((reg_block[44] << 16) + reg_block[45]) * scalefactor)
-                    datapoint['fields']['M_Imported_A'] = trunc_float(((reg_block[46] << 16) + reg_block[47]) * scalefactor)
-                    datapoint['fields']['M_Imported_B'] = trunc_float(((reg_block[48] << 16) + reg_block[49]) * scalefactor)
-                    datapoint['fields']['M_Imported_C'] = trunc_float(((reg_block[50] << 16) + reg_block[51]) * scalefactor)
-
+                    data.skip_bytes(34)
+                    # Register 40242
+                    scalefactor = 10**data.decode_16bit_int()
+                    data.skip_bytes(-34)
+                    # Register 40226-40240
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Exported'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Exported.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Exported_A'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Exported_A.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Exported_B'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Exported_B.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Exported_C'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Exported_C.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Imported'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Imported.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Imported_A'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Imported_A.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Imported_B'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Imported_B.labels(metriclabel).set(dictM[fooName])
+                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooName = 'M_Imported_C'
+                    if fooVal < 4294967295:
+                        dictM[fooName] = fooVal * scalefactor
+                    else:
+                        dictM[fooName] = 0.0
+                    datapoint['fields'][fooName] = dictM[fooName]
+                    M_Imported_C.labels(metriclabel).set(dictM[fooName])
+                   
                     # Accumulated AC Apparent Energy
                     #logger.debug(f'Apparent Energy SF: {str(np.int16(reg_block[69]))}')
                     #scalefactor = np.float_power(10,np.int16(reg_block[69]))
@@ -376,12 +995,25 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
                     #datapoint['fields']['M_Imported_VA_A'] = trunc_float(((reg_block[63] << 16) + reg_block[64]) * scalefactor)
                     #datapoint['fields']['M_Imported_VA_B'] = trunc_float(((reg_block[65] << 16) + reg_block[66]) * scalefactor)
                     #datapoint['fields']['M_Imported_VA_C'] = trunc_float(((reg_block[67] << 16) + reg_block[68]) * scalefactor)
-                    
+
+                    # Set the default value of ZERO for the ScaleFactor metrics for Prometheus
+                    M_AC_Current_SF.labels(metriclabel).set(0.0)
+                    M_AC_Voltage_SF.labels(metriclabel).set(0.0)
+                    M_AC_Frequency_SF.labels(metriclabel).set(0.0)
+                    M_AC_Power_SF.labels(metriclabel).set(0.0)
+                    M_AC_VA_SF.labels(metriclabel).set(0.0)
+                    M_AC_VAR_SF.labels(metriclabel).set(0.0)
+                    M_AC_PF_SF.labels(metriclabel).set(0.0)
+                    M_Energy_W_SF.labels(metriclabel).set(0.0)
+
                     datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
+
+                    logger.debug(f'Meter: {metriclabel}')
+                    for j, k in dictM.items():
+                        logger.debug(f'  {j}: {k}')
+                        
                     logger.debug(f'Writing to Influx: {str(datapoint)}')
-
                     await solar_client.write(datapoint)
-
 
                 else:
                     # Error during data receive
@@ -392,9 +1024,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
                     elif client.last_error() == 5:
                         logger.error('Timeout during send or receive operation!')               
                 
-                
-                
-                
         except InfluxDBWriteError as e:
             logger.error(f'Failed to write to InfluxDb: {e}')
         except IOError as e:
@@ -402,16 +1031,19 @@ async def write_to_influx(dbhost, dbport, mbmeters, dbname='solaredgetemp'):
         except Exception as e:
             logger.error(f'Unhandled exception: {e}')
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(period)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--influxdb', default='192.168.192.41')
-    parser.add_argument('--influxport', type=int, default=8086)
-    parser.add_argument('--port', type=int, default=1502, help='ModBus TCP port number to use')
+    parser.add_argument('--influx_server', default='192.168.1.1')
+    parser.add_argument('--influx_port', type=int, default=8086)
+    parser.add_argument('--influx_database', default='solaredge')
+    parser.add_argument('--inverter_port', type=int, default=1502, help='ModBus TCP port number to use')
     parser.add_argument('--unitid', type=int, default=1, help='ModBus unit id to use in communication')
-    parser.add_argument('--meters', type=int, default=3, help='Number of ModBus meters attached to inverter (0-3)')
-    parser.add_argument('solaredge', metavar='SolarEdge IP', help='IP address of the SolarEdge inverter to monitor')
+    parser.add_argument('--meters', type=int, default=0, help='Number of ModBus meters attached to inverter (0-3)')
+    parser.add_argument('--prometheus_exporter_port', type=int, default=2112, help='Port on which the prometheus exporter will listen on')
+    parser.add_argument('--interval', type=int, default=5, help='Time (seconds) between polling')
+    parser.add_argument('inverter_ip', metavar='SolarEdge IP', help='IP address of the SolarEdge inverter to monitor')
     parser.add_argument('--debug', '-d', action='count')
     args = parser.parse_args()
 
@@ -421,10 +1053,15 @@ if __name__ == '__main__':
     if args.debug and args.debug == 2:
         logging.getLogger('aioinflux').setLevel(logging.DEBUG)
 
-    print('Starting up solaredge monitoring')
-    print(f'Connecting to Solaredge inverter {args.solaredge} on port {args.port} using unitid {args.unitid}')
-    print(f'Writing data to influxDb {args.influxdb} on port {args.influxport}')
-    print(f'Number of meters is {args.meters}')
-    client = ModbusClient(args.solaredge, port=args.port, unit_id=args.unitid, auto_open=True)
+    print(f'*' * 60)
+    print(f'* Starting parameters')
+    print(f'*' * 60)
+    print(f'Inverter:\tAddress: {args.inverter_ip}\n\t\tPort: {args.inverter_port}\n\t\tID: {args.unitid}')
+    print(f'Meters:\t\t{args.meters}')
+    print(f'InfluxDB:\tServer: {args.influx_server}:{args.influx_port}\n\t\tDatabase: {args.influx_database}')
+    print(f'Prometheus:\tExporter Port: {args.prometheus_exporter_port}\n')
+    client = ModbusClient(args.inverter_ip, port=args.inverter_port, unit_id=args.unitid, auto_open=True)
+    logger.debug('Starting Prometheus exporter on port {args.prometheus_exporter_port}...')
+    start_http_server(args.prometheus_exporter_port)
     logger.debug('Running eventloop')
-    asyncio.get_event_loop().run_until_complete(write_to_influx(args.influxdb, args.influxport, args.meters))
+    asyncio.get_event_loop().run_until_complete(write_to_influx(args.influx_server, args.influx_port, args.meters, args.interval, args.influx_database))
