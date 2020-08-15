@@ -1,20 +1,24 @@
 FROM python:3.6-alpine
 
-LABEL maintainer="https://github.com/AlexCPU/Solaredge-influxdb"
+MAINTAINER "https://github.com/CoolDil/Solaredge-influxdb"
 
-ENV INFLUXDB=localhost
-ENV INFLUXPORT=8086
-ENV INVERTER=192.168.1.2
-ENV INVERTERPORT=502
+ENV INFLUX_SERVER=192.168.1.1
+ENV INFLUX_DATABASE=solaredge
+ENV INFLUX_PORT=8086
+ENV PROMETHEUS_EXPORTER_PORT=2112
+ENV INVERTER_IP=192.168.1.2
+ENV INVERTER_PORT=1502
 ENV UNITID=1
-ENV METERS=0
+ENV METERS=2
+ENV INTERVAL
+
+EXPOSE 2112/tcp
 
 ADD requirements.txt /
-
 RUN apk add --no-cache --update alpine-sdk && \
     pip3 install -r /requirements.txt && \
     apk del alpine-sdk
 
 ADD solaredge.py /
 
-CMD python3 /solaredge.py --influxdb $INFLUXDB --influxport $INFLUXPORT --port $INVERTERPORT --unitid $UNITID --meters $METERS $INVERTER
+CMD python3 /solaredge.py --influx_server $INFLUX_SERVER --influx_port $INFLUX_PORT --influx_database $INFLUX_DATABASE --prometheus_exporter_port $PROMETHEUS_EXPORTER_PORT --inverter_port $INVERTER_PORT --unitid $UNITID --meters $METERS --interval $INTERVAL $INVERTER_IP 
