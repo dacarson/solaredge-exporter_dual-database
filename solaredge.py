@@ -66,6 +66,8 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                 logger.error('Send or receive error!')
             elif client.last_error() == 5:
                 logger.error('Timeout during send or receive operation!')
+            await asyncio.sleep(period)
+            
     while True:
         dictMeterLabel = []
         for x in range(1, mbmeters+1):
