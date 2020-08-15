@@ -108,6 +108,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     logger.error('Send or receive error!')
                 elif client.last_error() == 5:
                     logger.error('Timeout during send or receive operation!')
+                await asyncio.sleep(period)
         if connflag:
             break
 
@@ -148,19 +149,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
     Temp_SF = Gauge('Temp_SF', 'Scale factor')
     Status = Gauge('Status', 'Operating State')
     Status_Vendor = Gauge('Status_Vendor', 'Vendor-defined operating state and error codes. For error description, meaning and troubleshooting, refer to the SolarEdge Installation Guide.')
-
-    AC_Current_SF.set(0)
-    AC_Voltage_SF.set(0)
-    AC_Power_SF.set(0)
-    AC_Frequency_SF.set(0)
-    AC_VA_SF.set(0)
-    AC_VAR_SF.set(0)
-    AC_PF_SF.set(0)
-    AC_Energy_WH_SF.set(0)
-    DC_Current_SF.set(0)
-    DC_Voltage_SF.set(0)
-    DC_Power_SF.set(0)
-    Temp_SF.set(0)
 
     # Define the Modbus Prometheus metrics - Meter Metrics (if present)
     if mbmeters >= 1:
@@ -535,6 +523,20 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                 
                 datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
 
+                # Set the default value of ZERO for the ScaleFactor metrics for Prometheus
+                AC_Current_SF.set(0)
+                AC_Voltage_SF.set(0)
+                AC_Power_SF.set(0)
+                AC_Frequency_SF.set(0)
+                AC_VA_SF.set(0)
+                AC_VAR_SF.set(0)
+                AC_PF_SF.set(0)
+                AC_Energy_WH_SF.set(0)
+                DC_Current_SF.set(0)
+                DC_Voltage_SF.set(0)
+                DC_Power_SF.set(0)
+                Temp_SF.set(0)
+
                 logger.debug(f'Inverter')
                 for j, k in dictInv.items():
                     logger.debug(f'  {j}: {k}')
@@ -550,6 +552,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     logger.error('Send or receive error!')
                 elif client.last_error() == 5:
                     logger.error('Timeout during send or receive operation!')
+                await asyncio.sleep(period)
                     
             for x in range(1, mbmeters+1):
                 # Now loop through this for each meter that is attached.
@@ -1024,7 +1027,8 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     elif client.last_error() == 3 or client.last_error() == 4:
                         logger.error('Send or receive error!')
                     elif client.last_error() == 5:
-                        logger.error('Timeout during send or receive operation!')               
+                        logger.error('Timeout during send or receive operation!')
+                    await asyncio.sleep(period)
                 
         except InfluxDBWriteError as e:
             logger.error(f'Failed to write to InfluxDb: {e}')
