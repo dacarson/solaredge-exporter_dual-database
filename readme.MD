@@ -44,5 +44,5 @@ In addition, you can specify additional flags to customize the tool:
 * `--unitid` specifies the ModBus ID used by the inverter (default 1)
 * `--inverter_port` specifies the ModBus TCP port to connect to (default 1502)
 * `--meters` specifies the number of ModBus meters connected to the inverter (default 0) (range 0-3)
-* `--prometheus_exporter_port` specifies the port that the inverter data will be availabe for Prometheus scraping (default 2112)
+* `--prometheus_exporter_port` specifies the port for Prometheus scraping (default 2112)
 * `-d` or `--debug` activates debug logging
