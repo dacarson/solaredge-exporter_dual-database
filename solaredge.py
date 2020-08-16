@@ -36,7 +36,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
         return
     logger.info('Database opened and initialized')
  
-    # Read the common blocks on the Inverter (and meters if present)
+    # Read the common blocks on the Inverter
     while True:
         reg_block = {}
         reg_block = client.read_holding_registers(40004, 65)
@@ -68,49 +68,52 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                 logger.error('Timeout during send or receive operation!')
             await asyncio.sleep(period)
             
-    while True:
-        dictMeterLabel = []
-        for x in range(1, mbmeters+1):
-            reg_block = {}
-            if x==1:
-                reg_block = client.read_holding_registers(40123, 65)
-            if x==2:
-                reg_block = client.read_holding_registers(40297, 65)
-            if x==3:
-                reg_block = client.read_holding_registers(40471, 65)       
-            if reg_block:
-                decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
-                MManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
-                MModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
-                MOption = decoder.decode_string(16).decode('UTF-8')
-                MVersion = decoder.decode_string(16).decode('UTF-8') #decoder.decode_bits()
-                MSerialNumber = decoder.decode_string(32).decode('UTF-8')
-                MDeviceAddress = decoder.decode_16bit_uint()
-                fooLabel = MManufacturer.split('\x00')[0] + '(' + MSerialNumber.split('\x00')[0] + ')'
-                dictMeterLabel.append(fooLabel)
-                print('*' * 60)
-                print('* Meter ' + str(x) + ' Info')
-                print('*' * 60)
-                print(' Manufacturer: ' + MManufacturer)
-                print(' Model: ' + MModel)
-                print(' Mode: ' + MOption)
-                print(' Version: ' + MVersion)
-                print(' Serial Number: ' + MSerialNumber)
-                print(' ModBus ID: ' + str(MDeviceAddress))
-                if x==mbmeters:
+    # Read the common blocks on the meter/s (if present)
+    connflag = False
+    if mbmeters >= 1:
+        while True:
+            dictMeterLabel = []
+            for x in range(1, mbmeters+1):
+                reg_block = {}
+                if x==1:
+                    reg_block = client.read_holding_registers(40123, 65)
+                if x==2:
+                    reg_block = client.read_holding_registers(40297, 65)
+                if x==3:
+                    reg_block = client.read_holding_registers(40471, 65)       
+                if reg_block:
+                    decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
+                    MManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
+                    MModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
+                    MOption = decoder.decode_string(16).decode('UTF-8')
+                    MVersion = decoder.decode_string(16).decode('UTF-8') #decoder.decode_bits()
+                    MSerialNumber = decoder.decode_string(32).decode('UTF-8')
+                    MDeviceAddress = decoder.decode_16bit_uint()
+                    fooLabel = MManufacturer.split('\x00')[0] + '(' + MSerialNumber.split('\x00')[0] + ')'
+                    dictMeterLabel.append(fooLabel)
                     print('*' * 60)
-                connflag = True
-            else:
-                # Error during data receive
-                if client.last_error() == 2:
-                    logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
-                elif client.last_error() == 3 or client.last_error() == 4:
-                    logger.error('Send or receive error!')
-                elif client.last_error() == 5:
-                    logger.error('Timeout during send or receive operation!')
-                await asyncio.sleep(period)
-        if connflag:
-            break
+                    print('* Meter ' + str(x) + ' Info')
+                    print('*' * 60)
+                    print(' Manufacturer: ' + MManufacturer)
+                    print(' Model: ' + MModel)
+                    print(' Mode: ' + MOption)
+                    print(' Version: ' + MVersion)
+                    print(' Serial Number: ' + MSerialNumber)
+                    print(' ModBus ID: ' + str(MDeviceAddress))
+                    if x==mbmeters:
+                        print('*' * 60)
+                    connflag = True
+                else:
+                    # Error during data receive
+                    if client.last_error() == 2:
+                        logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
+                    elif client.last_error() == 3 or client.last_error() == 4:
+                        logger.error('Send or receive error!')
+                    elif client.last_error() == 5:
+                        logger.error('Timeout during send or receive operation!')
+                    await asyncio.sleep(period)
+            if connflag:
+                break
 
     # Define the Modbus Prometheus metrics - Inverter Metrics
     SunSpec_DID = Gauge('SunSpec_DID', '101 = single phase 102 = split phase1 103 = three phase')
@@ -1041,9 +1044,9 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--influx_server', default='192.168.1.1')
+    parser.add_argument('--influx_server', default='192.168.192.41')
     parser.add_argument('--influx_port', type=int, default=8086)
-    parser.add_argument('--influx_database', default='solaredge')
+    parser.add_argument('--influx_database', default='solaredgetemp')
     parser.add_argument('--inverter_port', type=int, default=1502, help='ModBus TCP port number to use')
     parser.add_argument('--unitid', type=int, default=1, help='ModBus unit id to use in communication')
     parser.add_argument('--meters', type=int, default=0, help='Number of ModBus meters attached to inverter (0-3)')
