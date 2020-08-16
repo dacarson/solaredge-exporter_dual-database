@@ -20,6 +20,394 @@ datapoint = {
 reg_block = {}
 logger = logging.getLogger('solaredge')
 
+############################################################
+##def define_prometheus_metrics(mbmeters):
+##    # Define the Modbus Prometheus metrics - Inverter Metrics
+SunSpec_DID = Gauge('SunSpec_DID', '101 = single phase 102 = split phase1 103 = three phase')
+SunSpec_Length = Gauge('SunSpec_Length', 'Registers 50 = Length of model block')
+AC_Current = Gauge('AC_Current', 'Amps AC Total Current value')
+AC_CurrentA = Gauge('AC_CurrentA', 'Amps AC Phase A Current value')
+AC_CurrentB = Gauge('AC_CurrentB', 'Amps AC Phase B Current value')
+AC_CurrentC = Gauge('AC_CurrentC', 'Amps AC Phase C Current value')
+AC_Current_SF = Gauge('AC_Current_SF', 'AC Current scale factor')
+AC_VoltageAB = Gauge('AC_VoltageAB', 'Volts AC Voltage Phase AB value')
+AC_VoltageBC = Gauge('AC_VoltageBC', 'Volts AC Voltage Phase BC value')
+AC_VoltageCA = Gauge('AC_VoltageCA', 'Volts AC Voltage Phase CA value')
+AC_VoltageAN = Gauge('AC_VoltageAN',' Volts AC Voltage Phase A to N value')
+AC_VoltageBN = Gauge('AC_VoltageBN', 'Volts AC Voltage Phase B to N value')
+AC_VoltageCN = Gauge('AC_VoltageCN', 'Volts AC Voltage Phase C to N value')
+AC_Voltage_SF = Gauge('AC_Voltage_SF', 'AC Voltage scale factor')
+AC_Power = Gauge('AC_Power', 'Watts AC Power value')
+AC_Power_SF = Gauge('AC_Power_SF', 'AC Power scale factor')
+AC_Frequency = Gauge('AC_Frequency', 'Hertz AC Frequency value')
+AC_Frequency_SF = Gauge('AC_Frequency_SF', 'Scale factor')
+AC_VA = Gauge('AC_VA', 'VA Apparent Power')
+AC_VA_SF = Gauge('AC_VA_SF', 'Scale factor')
+AC_VAR = Gauge('AC_VAR', 'VAR Reactive Power')
+AC_VAR_SF = Gauge('AC_VAR_SF', 'Scale factor')
+AC_PF = Gauge('AC_PF', '% Power Factor')
+AC_PF_SF = Gauge('AC_PF_SF', 'Scale factor')
+AC_Energy_WH = Gauge('AC_Energy_WH', 'WattHours AC Lifetime Energy production')
+AC_Energy_WH_SF = Gauge('AC_Energy_WH_SF', 'Scale factor')
+DC_Current = Gauge('DC_Current', 'Amps DC Current value')
+DC_Current_SF = Gauge('DC_Current_SF', 'Scale factor')
+DC_Voltage = Gauge('DC_Voltage', 'Volts DC Voltage value')
+DC_Voltage_SF = Gauge('DC_Voltage_SF', 'Scale factor')
+DC_Power = Gauge('DC_Power', 'Watts DC Power value')
+DC_Power_SF = Gauge('DC_Power_SF', 'Scale factor')
+Temp_Sink = Gauge('Temp_Sink', 'Degrees C Heat Sink Temperature')
+Temp_SF = Gauge('Temp_SF', 'Scale factor')
+Status = Gauge('Status', 'Operating State')
+Status_Vendor = Gauge('Status_Vendor', 'Vendor-defined operating state and error codes. For error description, meaning and troubleshooting, refer to the SolarEdge Installation Guide.')
+
+##    # Define the Modbus Prometheus metrics - Meter Metrics (if present)
+##    if mbmeters >= 1:
+M_SunSpec_DID = Gauge('M_SunSpec_DID', '')
+M_SunSpec_Length = Gauge('M_SunSpec_Length','')
+M_AC_Current = Gauge('M_AC_Current', 'Amps AC Total Current value')
+M_AC_CurrentA = Gauge('M_AC_CurrentA', 'Amps AC Phase A Current value')
+M_AC_CurrentB = Gauge('M_AC_CurrentB', 'Amps AC Phase B Current value')
+M_AC_CurrentC = Gauge('M_AC_CurrentC', 'Amps AC Phase C Current value')
+M_AC_Current_SF = Gauge('M_AC_Current_SF', 'AC Current scale factor')
+M_AC_VoltageLN = Gauge('M_AC_VoltageLN', 'Volts AC Voltage Phase AB value')
+M_AC_VoltageAN = Gauge('M_AC_VoltageAN', 'Volts AC Voltage Phase BC value')
+M_AC_VoltageBN = Gauge('M_AC_VoltageBN', 'Volts AC Voltage Phase BC value')
+M_AC_VoltageCN = Gauge('M_AC_VoltageCN', 'Volts AC Voltage Phase BC value')
+M_AC_VoltageLL = Gauge('M_AC_VoltageLL', 'Volts AC Voltage Phase BC value')
+M_AC_VoltageAB = Gauge('M_AC_VoltageAB', 'Volts AC Voltage Phase BC value')
+M_AC_VoltageBC = Gauge('M_AC_VoltageBC', 'Volts AC Voltage Phase BC value')
+M_AC_VoltageCA = Gauge('M_AC_VoltageCA', 'Volts AC Voltage Phase BC value')
+M_AC_Voltage_SF = Gauge('M_AC_Voltage_SF', 'AC Voltage scale factor')
+M_AC_Frequency = Gauge('M_AC_Frequency', 'Hertz AC Frequency value')
+M_AC_Frequency_SF = Gauge('M_AC_Frequency_SF', 'Scale factor')
+M_AC_Power = Gauge('M_AC_Power', 'Watts AC Power value')
+M_AC_Power_A = Gauge('M_AC_Power_A', 'Watts AC Power value')
+M_AC_Power_B = Gauge('M_AC_Power_B', 'Watts AC Power value')
+M_AC_Power_C = Gauge('M_AC_Power_C', 'Watts AC Power value')
+M_AC_Power_SF = Gauge('M_AC_Power_SF', 'AC Power scale factor')
+M_AC_VA = Gauge('M_AC_VA', 'VA Apparent Power')
+M_AC_VA_A = Gauge('M_AC_VA_A', 'VA Apparent Power')
+M_AC_VA_B = Gauge('M_AC_VA_B', 'VA Apparent Power')
+M_AC_VA_C = Gauge('M_AC_VA_C', 'VA Apparent Power')
+M_AC_VA_SF = Gauge('M_AC_VA_SF', 'Scale factor')
+M_AC_VAR = Gauge('M_AC_VAR', 'VAR Reactive Power')
+M_AC_VAR_A = Gauge('M_AC_VAR_A', 'VAR Reactive Power')
+M_AC_VAR_B = Gauge('M_AC_VAR_B', 'VAR Reactive Power')
+M_AC_VAR_C = Gauge('M_AC_VAR_C', 'VAR Reactive Power')
+M_AC_VAR_SF = Gauge('M_AC_VAR_SF', 'Scale factor')
+M_AC_PF = Gauge('M_AC_PF', '% Power Factor')
+M_AC_PF_A = Gauge('M_AC_PF_A', '% Power Factor')
+M_AC_PF_B = Gauge('M_AC_PF_B', '% Power Factor')
+M_AC_PF_C = Gauge('M_AC_PF_C', '% Power Factor')
+M_AC_PF_SF = Gauge('M_AC_PF_SF', 'Scale factor')
+M_Exported = Gauge('M_Exported', 'WattHours AC Exported')
+M_Exported_A = Gauge('M_Exported_A', 'WattHours AC Exported')
+M_Exported_B = Gauge('M_Exported_B', 'WattHours AC Exported')
+M_Exported_C = Gauge('M_Exported_C', 'WattHours AC Exported')
+M_Imported = Gauge('M_Imported', 'WattHours AC Imported')
+M_Imported_A = Gauge('M_Imported_A', 'WattHours AC Imported')
+M_Imported_B = Gauge('M_Imported_B', 'WattHours AC Imported')
+M_Imported_C = Gauge('M_Imported_C', 'WattHours AC Imported')
+M_Energy_W_SF = Gauge('M_Energy_W_SF', 'M_Energy_W_SF')
+
+
+# Meter 2
+M2_SunSpec_DID = Gauge('M2_SunSpec_DID', '')
+M2_SunSpec_Length = Gauge('M2_SunSpec_Length','')
+M2_AC_Current = Gauge('M2_AC_Current', 'Amps AC Total Current value')
+M2_AC_CurrentA = Gauge('M2_AC_CurrentA', 'Amps AC Phase A Current value')
+M2_AC_CurrentB = Gauge('M2_AC_CurrentB', 'Amps AC Phase B Current value')
+M2_AC_CurrentC = Gauge('M2_AC_CurrentC', 'Amps AC Phase C Current value')
+M2_AC_Current_SF = Gauge('M2_AC_Current_SF', 'AC Current scale factor')
+M2_AC_VoltageLN = Gauge('M2_AC_VoltageLN', 'Volts AC Voltage Phase AB value')
+M2_AC_VoltageAN = Gauge('M2_AC_VoltageAN', 'Volts AC Voltage Phase BC value')
+M2_AC_VoltageBN = Gauge('M2_AC_VoltageBN', 'Volts AC Voltage Phase BC value')
+M2_AC_VoltageCN = Gauge('M2_AC_VoltageCN', 'Volts AC Voltage Phase BC value')
+M2_AC_VoltageLL = Gauge('M2_AC_VoltageLL', 'Volts AC Voltage Phase BC value')
+M2_AC_VoltageAB = Gauge('M2_AC_VoltageAB', 'Volts AC Voltage Phase BC value')
+M2_AC_VoltageBC = Gauge('M2_AC_VoltageBC', 'Volts AC Voltage Phase BC value')
+M2_AC_VoltageCA = Gauge('M2_AC_VoltageCA', 'Volts AC Voltage Phase BC value')
+M2_AC_Voltage_SF = Gauge('M2_AC_Voltage_SF', 'AC Voltage scale factor')
+M2_AC_Frequency = Gauge('M2_AC_Frequency', 'Hertz AC Frequency value')
+M2_AC_Frequency_SF = Gauge('M2_AC_Frequency_SF', 'Scale factor')
+M2_AC_Power = Gauge('M2_AC_Power', 'Watts AC Power value')
+M2_AC_Power_A = Gauge('M2_AC_Power_A', 'Watts AC Power value')
+M2_AC_Power_B = Gauge('M2_AC_Power_B', 'Watts AC Power value')
+M2_AC_Power_C = Gauge('M2_AC_Power_C', 'Watts AC Power value')
+M2_AC_Power_SF = Gauge('M2_AC_Power_SF', 'AC Power scale factor')
+M2_AC_VA = Gauge('M2_AC_VA', 'VA Apparent Power')
+M2_AC_VA_A = Gauge('M2_AC_VA_A', 'VA Apparent Power')
+M2_AC_VA_B = Gauge('M2_AC_VA_B', 'VA Apparent Power')
+M2_AC_VA_C = Gauge('M2_AC_VA_C', 'VA Apparent Power')
+M2_AC_VA_SF = Gauge('M2_AC_VA_SF', 'Scale factor')
+M2_AC_VAR = Gauge('M2_AC_VAR', 'VAR Reactive Power')
+M2_AC_VAR_A = Gauge('M2_AC_VAR_A', 'VAR Reactive Power')
+M2_AC_VAR_B = Gauge('M2_AC_VAR_B', 'VAR Reactive Power')
+M2_AC_VAR_C = Gauge('M2_AC_VAR_C', 'VAR Reactive Power')
+M2_AC_VAR_SF = Gauge('M2_AC_VAR_SF', 'Scale factor')
+M2_AC_PF = Gauge('M2_AC_PF', '% Power Factor')
+M2_AC_PF_A = Gauge('M2_AC_PF_A', '% Power Factor')
+M2_AC_PF_B = Gauge('M2_AC_PF_B', '% Power Factor')
+M2_AC_PF_C = Gauge('M2_AC_PF_C', '% Power Factor')
+M2_AC_PF_SF = Gauge('M2_AC_PF_SF', 'Scale factor')
+M2_Exported = Gauge('M2_Exported', 'WattHours AC Exported')
+M2_Exported_A = Gauge('M2_Exported_A', 'WattHours AC Exported')
+M2_Exported_B = Gauge('M2_Exported_B', 'WattHours AC Exported')
+M2_Exported_C = Gauge('M2_Exported_C', 'WattHours AC Exported')
+M2_Imported = Gauge('M2_Imported', 'WattHours AC Imported')
+M2_Imported_A = Gauge('M2_Imported_A', 'WattHours AC Imported')
+M2_Imported_B = Gauge('M2_Imported_B', 'WattHours AC Imported')
+M2_Imported_C = Gauge('M2_Imported_C', 'WattHours AC Imported')
+M2_Energy_W_SF = Gauge('M2_Energy_W_SF', 'M2_Energy_W_SF')
+
+# Meter 3
+M3_SunSpec_DID = Gauge('M3_SunSpec_DID', '')
+M3_SunSpec_Length = Gauge('M3_SunSpec_Length','')
+M3_AC_Current = Gauge('M3_AC_Current', 'Amps AC Total Current value')
+M3_AC_CurrentA = Gauge('M3_AC_CurrentA', 'Amps AC Phase A Current value')
+M3_AC_CurrentB = Gauge('M3_AC_CurrentB', 'Amps AC Phase B Current value')
+M3_AC_CurrentC = Gauge('M3_AC_CurrentC', 'Amps AC Phase C Current value')
+M3_AC_Current_SF = Gauge('M3_AC_Current_SF', 'AC Current scale factor')
+M3_AC_VoltageLN = Gauge('M3_AC_VoltageLN', 'Volts AC Voltage Phase AB value')
+M3_AC_VoltageAN = Gauge('M3_AC_VoltageAN', 'Volts AC Voltage Phase BC value')
+M3_AC_VoltageBN = Gauge('M3_AC_VoltageBN', 'Volts AC Voltage Phase BC value')
+M3_AC_VoltageCN = Gauge('M3_AC_VoltageCN', 'Volts AC Voltage Phase BC value')
+M3_AC_VoltageLL = Gauge('M3_AC_VoltageLL', 'Volts AC Voltage Phase BC value')
+M3_AC_VoltageAB = Gauge('M3_AC_VoltageAB', 'Volts AC Voltage Phase BC value')
+M3_AC_VoltageBC = Gauge('M3_AC_VoltageBC', 'Volts AC Voltage Phase BC value')
+M3_AC_VoltageCA = Gauge('M3_AC_VoltageCA', 'Volts AC Voltage Phase BC value')
+M3_AC_Voltage_SF = Gauge('M3_AC_Voltage_SF', 'AC Voltage scale factor')
+M3_AC_Frequency = Gauge('M3_AC_Frequency', 'Hertz AC Frequency value')
+M3_AC_Frequency_SF = Gauge('M3_AC_Frequency_SF', 'Scale factor')
+M3_AC_Power = Gauge('M3_AC_Power', 'Watts AC Power value')
+M3_AC_Power_A = Gauge('M3_AC_Power_A', 'Watts AC Power value')
+M3_AC_Power_B = Gauge('M3_AC_Power_B', 'Watts AC Power value')
+M3_AC_Power_C = Gauge('M3_AC_Power_C', 'Watts AC Power value')
+M3_AC_Power_SF = Gauge('M3_AC_Power_SF', 'AC Power scale factor')
+M3_AC_VA = Gauge('M3_AC_VA', 'VA Apparent Power')
+M3_AC_VA_A = Gauge('M3_AC_VA_A', 'VA Apparent Power')
+M3_AC_VA_B = Gauge('M3_AC_VA_B', 'VA Apparent Power')
+M3_AC_VA_C = Gauge('M3_AC_VA_C', 'VA Apparent Power')
+M3_AC_VA_SF = Gauge('M3_AC_VA_SF', 'Scale factor')
+M3_AC_VAR = Gauge('M3_AC_VAR', 'VAR Reactive Power')
+M3_AC_VAR_A = Gauge('M3_AC_VAR_A', 'VAR Reactive Power')
+M3_AC_VAR_B = Gauge('M3_AC_VAR_B', 'VAR Reactive Power')
+M3_AC_VAR_C = Gauge('M3_AC_VAR_C', 'VAR Reactive Power')
+M3_AC_VAR_SF = Gauge('M3_AC_VAR_SF', 'Scale factor')
+M3_AC_PF = Gauge('M3_AC_PF', '% Power Factor')
+M3_AC_PF_A = Gauge('M3_AC_PF_A', '% Power Factor')
+M3_AC_PF_B = Gauge('M3_AC_PF_B', '% Power Factor')
+M3_AC_PF_C = Gauge('M3_AC_PF_C', '% Power Factor')
+M3_AC_PF_SF = Gauge('M3_AC_PF_SF', 'Scale factor')
+M3_Exported = Gauge('M3_Exported', 'WattHours AC Exported')
+M3_Exported_A = Gauge('M3_Exported_A', 'WattHours AC Exported')
+M3_Exported_B = Gauge('M3_Exported_B', 'WattHours AC Exported')
+M3_Exported_C = Gauge('M3_Exported_C', 'WattHours AC Exported')
+M3_Imported = Gauge('M3_Imported', 'WattHours AC Imported')
+M3_Imported_A = Gauge('M3_Imported_A', 'WattHours AC Imported')
+M3_Imported_B = Gauge('M3_Imported_B', 'WattHours AC Imported')
+M3_Imported_C = Gauge('M3_Imported_C', 'WattHours AC Imported')
+M3_Energy_W_SF = Gauge('M3_Energy_W_SF', 'M3_Energy_W_SF')
+
+
+############################################################
+
+def publish_metrics(dictobj, objtype, metriclabel, meternum=0):
+
+    global datapoint
+
+    if objtype == 'inverter':
+        # Prometheus Metrics for Inverter
+        AC_Current.set(dictobj['AC_Current'])
+        AC_CurrentA.set(dictobj['AC_CurrentA'])
+        AC_CurrentB.set(dictobj['AC_CurrentB'])
+        AC_CurrentC.set(dictobj['AC_CurrentC'])
+        AC_VoltageAB.set(dictobj['AC_VoltageAB'])
+        AC_VoltageBC.set(dictobj['AC_VoltageBC'])
+        AC_VoltageCA.set(dictobj['AC_VoltageCA'])
+        AC_VoltageAN.set(dictobj['AC_VoltageAN'])
+        AC_VoltageBN.set(dictobj['AC_VoltageBN'])
+        AC_VoltageCN.set(dictobj['AC_VoltageCN'])
+        AC_Power.set(dictobj['AC_Power'])
+        AC_Frequency.set(dictobj['AC_Frequency'])
+        AC_VA.set(dictobj['AC_VA'])
+        AC_VAR.set(dictobj['AC_VAR'])
+        AC_PF.set(dictobj['AC_PF'])
+        AC_Energy_WH.set(dictobj['AC_Energy_WH'])
+        DC_Current.set(dictobj['DC_Current'])
+        DC_Voltage.set(dictobj['DC_Voltage'])
+        DC_Power.set(dictobj['DC_Power'])
+        Temp_Sink.set(dictobj['Temp_Sink'])
+        Status.set(dictobj['Status'])
+        Status_Vendor.set(dictobj['Status_Vendor'])
+        AC_Current_SF.set(0.0)
+        AC_Voltage_SF.set(0.0)
+        AC_Power_SF.set(0.0)
+        AC_Frequency_SF.set(0.0)
+        AC_VA_SF.set(0.0)
+        AC_VAR_SF.set(0.0)
+        AC_PF_SF.set(0.0)
+        AC_Energy_WH_SF.set(0.0)
+        DC_Current_SF.set(0.0)
+        DC_Voltage_SF.set(0.0)
+        DC_Power_SF.set(0.0)
+        Temp_SF.set(0.0)
+        # InfluxDB metrics
+        for key, value in dictobj.items():
+            datapoint['fields'][key] = value
+
+    if objtype == 'meter':
+        # InfluxDB Metrics
+        for key, value in dictobj.items():
+            datapoint['fields'][key] = value
+        if meternum==1:
+            # Prometheus Metrics for Meter 1
+            M_AC_Current.set(dictobj['M_AC_Current'])
+            M_AC_CurrentA.set(dictobj['M_AC_CurrentA'])
+            M_AC_CurrentB.set(dictobj['M_AC_CurrentB'])
+            M_AC_CurrentC.set(dictobj['M_AC_CurrentC'])
+            M_AC_VoltageLN.set(dictobj['M_AC_VoltageLN'])
+            M_AC_VoltageAN.set(dictobj['M_AC_VoltageAN'])
+            M_AC_VoltageBN.set(dictobj['M_AC_VoltageBN'])
+            M_AC_VoltageCN.set(dictobj['M_AC_VoltageCN'])
+            M_AC_VoltageLL.set(dictobj['M_AC_VoltageLL'])
+            M_AC_VoltageAB.set(dictobj['M_AC_VoltageAB'])
+            M_AC_VoltageBC.set(dictobj['M_AC_VoltageBC'])
+            M_AC_VoltageCA.set(dictobj['M_AC_VoltageCA'])
+            M_AC_Frequency.set(dictobj['M_AC_Frequency'])
+            M_AC_Power.set(dictobj['M_AC_Power'])
+            M_AC_Power_A.set(dictobj['M_AC_Power_A'])
+            M_AC_Power_B.set(dictobj['M_AC_Power_B'])
+            M_AC_Power_C.set(dictobj['M_AC_Power_C'])
+            M_AC_VA.set(dictobj['M_AC_VA'])
+            M_AC_VA_A.set(dictobj['M_AC_VA_A'])
+            M_AC_VA_B.set(dictobj['M_AC_VA_B'])
+            M_AC_VA_C.set(dictobj['M_AC_VA_C'])
+            M_AC_VAR.set(dictobj['M_AC_VAR'])
+            M_AC_VAR_A.set(dictobj['M_AC_VAR_A'])
+            M_AC_VAR_B.set(dictobj['M_AC_VAR_B'])
+            M_AC_VAR_C.set(dictobj['M_AC_VAR_C'])
+            M_AC_PF.set(dictobj['M_AC_PF'])
+            M_AC_PF_A.set(dictobj['M_AC_PF_A'])
+            M_AC_PF_B.set(dictobj['M_AC_PF_B'])
+            M_AC_PF_C.set(dictobj['M_AC_PF_C'])
+            M_Exported.set(dictobj['M_Exported'])
+            M_Exported_A.set(dictobj['M_Exported_A'])
+            M_Exported_B.set(dictobj['M_Exported_B'])
+            M_Exported_C.set(dictobj['M_Exported_C'])
+            M_Imported.set(dictobj['M_Imported'])
+            M_Imported_A.set(dictobj['M_Imported_A'])
+            M_Imported_B.set(dictobj['M_Imported_B'])
+            M_Imported_C.set(dictobj['M_Imported_C'])
+            M_AC_Current_SF.set(0.0)
+            M_AC_Voltage_SF.set(0.0)
+            M_AC_Frequency_SF.set(0.0)
+            M_AC_Power_SF.set(0.0)
+            M_AC_VA_SF.set(0.0)
+            M_AC_VAR_SF.set(0.0)
+            M_AC_PF_SF.set(0.0)
+            M_Energy_W_SF.set(0.0)
+
+        if meternum==2:
+            # Prometheus Metrics for Meter 2
+            M2_AC_Current.set(dictobj['M_AC_Current'])
+            M2_AC_CurrentA.set(dictobj['M_AC_CurrentA'])
+            M2_AC_CurrentB.set(dictobj['M_AC_CurrentB'])
+            M2_AC_CurrentC.set(dictobj['M_AC_CurrentC'])
+            M2_AC_VoltageLN.set(dictobj['M_AC_VoltageLN'])
+            M2_AC_VoltageAN.set(dictobj['M_AC_VoltageAN'])
+            M2_AC_VoltageBN.set(dictobj['M_AC_VoltageBN'])
+            M2_AC_VoltageCN.set(dictobj['M_AC_VoltageCN'])
+            M2_AC_VoltageLL.set(dictobj['M_AC_VoltageLL'])
+            M2_AC_VoltageAB.set(dictobj['M_AC_VoltageAB'])
+            M2_AC_VoltageBC.set(dictobj['M_AC_VoltageBC'])
+            M2_AC_VoltageCA.set(dictobj['M_AC_VoltageCA'])
+            M2_AC_Frequency.set(dictobj['M_AC_Frequency'])
+            M2_AC_Power.set(dictobj['M_AC_Power'])
+            M2_AC_Power_A.set(dictobj['M_AC_Power_A'])
+            M2_AC_Power_B.set(dictobj['M_AC_Power_B'])
+            M2_AC_Power_C.set(dictobj['M_AC_Power_C'])
+            M2_AC_VA.set(dictobj['M_AC_VA'])
+            M2_AC_VA_A.set(dictobj['M_AC_VA_A'])
+            M2_AC_VA_B.set(dictobj['M_AC_VA_B'])
+            M2_AC_VA_C.set(dictobj['M_AC_VA_C'])
+            M2_AC_VAR.set(dictobj['M_AC_VAR'])
+            M2_AC_VAR_A.set(dictobj['M_AC_VAR_A'])
+            M2_AC_VAR_B.set(dictobj['M_AC_VAR_B'])
+            M2_AC_VAR_C.set(dictobj['M_AC_VAR_C'])
+            M2_AC_PF.set(dictobj['M_AC_PF'])
+            M2_AC_PF_A.set(dictobj['M_AC_PF_A'])
+            M2_AC_PF_B.set(dictobj['M_AC_PF_B'])
+            M2_AC_PF_C.set(dictobj['M_AC_PF_C'])
+            M2_Exported.set(dictobj['M_Exported'])
+            M2_Exported_A.set(dictobj['M_Exported_A'])
+            M2_Exported_B.set(dictobj['M_Exported_B'])
+            M2_Exported_C.set(dictobj['M_Exported_C'])
+            M2_Imported.set(dictobj['M_Imported'])
+            M2_Imported_A.set(dictobj['M_Imported_A'])
+            M2_Imported_B.set(dictobj['M_Imported_B'])
+            M2_Imported_C.set(dictobj['M_Imported_C'])
+            M2_AC_Current_SF.set(0.0)
+            M2_AC_Voltage_SF.set(0.0)
+            M2_AC_Frequency_SF.set(0.0)
+            M2_AC_Power_SF.set(0.0)
+            M2_AC_VA_SF.set(0.0)
+            M2_AC_VAR_SF.set(0.0)
+            M2_AC_PF_SF.set(0.0)
+            M2_Energy_W_SF.set(0.0)
+
+        if meternum==3:
+            # Prometheus Metrics for Meter 3
+            M3_AC_Current.set(dictobj['M_AC_Current'])
+            M3_AC_CurrentA.set(dictobj['M_AC_CurrentA'])
+            M3_AC_CurrentB.set(dictobj['M_AC_CurrentB'])
+            M3_AC_CurrentC.set(dictobj['M_AC_CurrentC'])
+            M3_AC_VoltageLN.set(dictobj['M_AC_VoltageLN'])
+            M3_AC_VoltageAN.set(dictobj['M_AC_VoltageAN'])
+            M3_AC_VoltageBN.set(dictobj['M_AC_VoltageBN'])
+            M3_AC_VoltageCN.set(dictobj['M_AC_VoltageCN'])
+            M3_AC_VoltageLL.set(dictobj['M_AC_VoltageLL'])
+            M3_AC_VoltageAB.set(dictobj['M_AC_VoltageAB'])
+            M3_AC_VoltageBC.set(dictobj['M_AC_VoltageBC'])
+            M3_AC_VoltageCA.set(dictobj['M_AC_VoltageCA'])
+            M3_AC_Frequency.set(dictobj['M_AC_Frequency'])
+            M3_AC_Power.set(dictobj['M_AC_Power'])
+            M3_AC_Power_A.set(dictobj['M_AC_Power_A'])
+            M3_AC_Power_B.set(dictobj['M_AC_Power_B'])
+            M3_AC_Power_C.set(dictobj['M_AC_Power_C'])
+            M3_AC_VA.set(dictobj['M_AC_VA'])
+            M3_AC_VA_A.set(dictobj['M_AC_VA_A'])
+            M3_AC_VA_B.set(dictobj['M_AC_VA_B'])
+            M3_AC_VA_C.set(dictobj['M_AC_VA_C'])
+            M3_AC_VAR.set(dictobj['M_AC_VAR'])
+            M3_AC_VAR_A.set(dictobj['M_AC_VAR_A'])
+            M3_AC_VAR_B.set(dictobj['M_AC_VAR_B'])
+            M3_AC_VAR_C.set(dictobj['M_AC_VAR_C'])
+            M3_AC_PF.set(dictobj['M_AC_PF'])
+            M3_AC_PF_A.set(dictobj['M_AC_PF_A'])
+            M3_AC_PF_B.set(dictobj['M_AC_PF_B'])
+            M3_AC_PF_C.set(dictobj['M_AC_PF_C'])
+            M3_Exported.set(dictobj['M_Exported'])
+            M3_Exported_A.set(dictobj['M_Exported_A'])
+            M3_Exported_B.set(dictobj['M_Exported_B'])
+            M3_Exported_C.set(dictobj['M_Exported_C'])
+            M3_Imported.set(dictobj['M_Imported'])
+            M3_Imported_A.set(dictobj['M_Imported_A'])
+            M3_Imported_B.set(dictobj['M_Imported_B'])
+            M3_Imported_C.set(dictobj['M_Imported_C'])
+            M3_AC_Current_SF.set(0.0)
+            M3_AC_Voltage_SF.set(0.0)
+            M3_AC_Frequency_SF.set(0.0)
+            M3_AC_Power_SF.set(0.0)
+            M3_AC_VA_SF.set(0.0)
+            M3_AC_VAR_SF.set(0.0)
+            M3_AC_PF_SF.set(0.0)
+            M3_Energy_W_SF.set(0.0)
+
+
+############################################################
+
+
 async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
     global client
     global datapoint
@@ -67,7 +455,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
             elif client.last_error() == 5:
                 logger.error('Timeout during send or receive operation!')
             await asyncio.sleep(period)
-            
+
     # Read the common blocks on the meter/s (if present)
     connflag = False
     if mbmeters >= 1:
@@ -115,94 +503,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
             if connflag:
                 break
 
-    # Define the Modbus Prometheus metrics - Inverter Metrics
-    SunSpec_DID = Gauge('SunSpec_DID', '101 = single phase 102 = split phase1 103 = three phase')
-    SunSpec_Length = Gauge('SunSpec_Length', 'Registers 50 = Length of model block')
-    AC_Current = Gauge('AC_Current', 'Amps AC Total Current value')
-    AC_CurrentA = Gauge('AC_CurrentA', 'Amps AC Phase A Current value')
-    AC_CurrentB = Gauge('AC_CurrentB', 'Amps AC Phase B Current value')
-    AC_CurrentC = Gauge('AC_CurrentC', 'Amps AC Phase C Current value')
-    AC_Current_SF = Gauge('AC_Current_SF', 'AC Current scale factor')
-    AC_VoltageAB = Gauge('AC_VoltageAB', 'Volts AC Voltage Phase AB value')
-    AC_VoltageBC = Gauge('AC_VoltageBC', 'Volts AC Voltage Phase BC value')
-    AC_VoltageCA = Gauge('AC_VoltageCA', 'Volts AC Voltage Phase CA value')
-    AC_VoltageAN = Gauge('AC_VoltageAN',' Volts AC Voltage Phase A to N value')
-    AC_VoltageBN = Gauge('AC_VoltageBN', 'Volts AC Voltage Phase B to N value')
-    AC_VoltageCN = Gauge('AC_VoltageCN', 'Volts AC Voltage Phase C to N value')
-    AC_Voltage_SF = Gauge('AC_Voltage_SF', 'AC Voltage scale factor')
-    AC_Power = Gauge('AC_Power', 'Watts AC Power value')
-    AC_Power_SF = Gauge('AC_Power_SF', 'AC Power scale factor')
-    AC_Frequency = Gauge('AC_Frequency', 'Hertz AC Frequency value')
-    AC_Frequency_SF = Gauge('AC_Frequency_SF', 'Scale factor')
-    AC_VA = Gauge('AC_VA', 'VA Apparent Power')
-    AC_VA_SF = Gauge('AC_VA_SF', 'Scale factor')
-    AC_VAR = Gauge('AC_VAR', 'VAR Reactive Power')
-    AC_VAR_SF = Gauge('AC_VAR_SF', 'Scale factor')
-    AC_PF = Gauge('AC_PF', '% Power Factor')
-    AC_PF_SF = Gauge('AC_PF_SF', 'Scale factor')
-    AC_Energy_WH = Gauge('AC_Energy_WH', 'WattHours AC Lifetime Energy production')
-    AC_Energy_WH_SF = Gauge('AC_Energy_WH_SF', 'Scale factor')
-    DC_Current = Gauge('DC_Current', 'Amps DC Current value')
-    DC_Current_SF = Gauge('DC_Current_SF', 'Scale factor')
-    DC_Voltage = Gauge('DC_Voltage', 'Volts DC Voltage value')
-    DC_Voltage_SF = Gauge('DC_Voltage_SF', 'Scale factor')
-    DC_Power = Gauge('DC_Power', 'Watts DC Power value')
-    DC_Power_SF = Gauge('DC_Power_SF', 'Scale factor')
-    Temp_Sink = Gauge('Temp_Sink', 'Degrees C Heat Sink Temperature')
-    Temp_SF = Gauge('Temp_SF', 'Scale factor')
-    Status = Gauge('Status', 'Operating State')
-    Status_Vendor = Gauge('Status_Vendor', 'Vendor-defined operating state and error codes. For error description, meaning and troubleshooting, refer to the SolarEdge Installation Guide.')
-
-    # Define the Modbus Prometheus metrics - Meter Metrics (if present)
-    if mbmeters >= 1:
-        M_SunSpec_DID = Gauge('M_SunSpec_DID', '', ['meter'])
-        M_SunSpec_Length = Gauge('M_SunSpec_Length','', ['meter'])
-        M_AC_Current = Gauge('M_AC_Current', 'Amps AC Total Current value', ['meter'])
-        M_AC_CurrentA = Gauge('M_AC_CurrentA', 'Amps AC Phase A Current value', ['meter'])
-        M_AC_CurrentB = Gauge('M_AC_CurrentB', 'Amps AC Phase B Current value', ['meter'])
-        M_AC_CurrentC = Gauge('M_AC_CurrentC', 'Amps AC Phase C Current value', ['meter'])
-        M_AC_Current_SF = Gauge('M_AC_Current_SF', 'AC Current scale factor', ['meter'])
-        M_AC_VoltageLN = Gauge('M_AC_VoltageLN', 'Volts AC Voltage Phase AB value', ['meter'])
-        M_AC_VoltageAN = Gauge('M_AC_VoltageAN', 'Volts AC Voltage Phase BC value', ['meter'])
-        M_AC_VoltageBN = Gauge('M_AC_VoltageBN', 'Volts AC Voltage Phase BC value', ['meter'])
-        M_AC_VoltageCN = Gauge('M_AC_VoltageCN', 'Volts AC Voltage Phase BC value', ['meter'])
-        M_AC_VoltageLL = Gauge('M_AC_VoltageLL', 'Volts AC Voltage Phase BC value', ['meter'])
-        M_AC_VoltageAB = Gauge('M_AC_VoltageAB', 'Volts AC Voltage Phase BC value', ['meter'])
-        M_AC_VoltageBC = Gauge('M_AC_VoltageBC', 'Volts AC Voltage Phase BC value', ['meter'])
-        M_AC_VoltageCA = Gauge('M_AC_VoltageCA', 'Volts AC Voltage Phase BC value', ['meter'])
-        M_AC_Voltage_SF = Gauge('M_AC_Voltage_SF', 'AC Voltage scale factor', ['meter'])
-        M_AC_Frequency = Gauge('M_AC_Frequency', 'Hertz AC Frequency value', ['meter'])
-        M_AC_Frequency_SF = Gauge('M_AC_Frequency_SF', 'Scale factor', ['meter'])
-        M_AC_Power = Gauge('M_AC_Power', 'Watts AC Power value', ['meter'])
-        M_AC_Power_A = Gauge('M_AC_Power_A', 'Watts AC Power value', ['meter'])
-        M_AC_Power_B = Gauge('M_AC_Power_B', 'Watts AC Power value', ['meter'])
-        M_AC_Power_C = Gauge('M_AC_Power_C', 'Watts AC Power value', ['meter'])
-        M_AC_Power_SF = Gauge('M_AC_Power_SF', 'AC Power scale factor', ['meter'])
-        M_AC_VA = Gauge('M_AC_VA', 'VA Apparent Power', ['meter'])
-        M_AC_VA_A = Gauge('M_AC_VA_A', 'VA Apparent Power', ['meter'])
-        M_AC_VA_B = Gauge('M_AC_VA_B', 'VA Apparent Power', ['meter'])
-        M_AC_VA_C = Gauge('M_AC_VA_C', 'VA Apparent Power', ['meter'])
-        M_AC_VA_SF = Gauge('M_AC_VA_SF', 'Scale factor', ['meter'])
-        M_AC_VAR = Gauge('M_AC_VAR', 'VAR Reactive Power', ['meter'])
-        M_AC_VAR_A = Gauge('M_AC_VAR_A', 'VAR Reactive Power', ['meter'])
-        M_AC_VAR_B = Gauge('M_AC_VAR_B', 'VAR Reactive Power', ['meter'])
-        M_AC_VAR_C = Gauge('M_AC_VAR_C', 'VAR Reactive Power', ['meter'])
-        M_AC_VAR_SF = Gauge('M_AC_VAR_SF', 'Scale factor', ['meter'])
-        M_AC_PF = Gauge('M_AC_PF', '% Power Factor', ['meter'])
-        M_AC_PF_A = Gauge('M_AC_PF_A', '% Power Factor', ['meter'])
-        M_AC_PF_B = Gauge('M_AC_PF_B', '% Power Factor', ['meter'])
-        M_AC_PF_C = Gauge('M_AC_PF_C', '% Power Factor', ['meter'])
-        M_AC_PF_SF = Gauge('M_AC_PF_SF', 'Scale factor', ['meter'])
-        M_Exported = Gauge('M_Exported', 'WattHours AC Exported', ['meter'])
-        M_Exported_A = Gauge('M_Exported_A', 'WattHours AC Exported', ['meter'])
-        M_Exported_B = Gauge('M_Exported_B', 'WattHours AC Exported', ['meter'])
-        M_Exported_C = Gauge('M_Exported_C', 'WattHours AC Exported', ['meter'])
-        M_Imported = Gauge('M_Imported', 'WattHours AC Imported', ['meter'])
-        M_Imported_A = Gauge('M_Imported_A', 'WattHours AC Imported', ['meter'])
-        M_Imported_B = Gauge('M_Imported_B', 'WattHours AC Imported', ['meter'])
-        M_Imported_C = Gauge('M_Imported_C', 'WattHours AC Imported', ['meter'])
-        M_Energy_W_SF = Gauge('M_Energy_W_SF', 'M_Energy_W_SF', ['meter'])
-            
     # Start the loop for collecting the metrics...
     while True:
         try:
@@ -269,32 +569,24 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_Current.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_CurrentA'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_CurrentA.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_CurrentB'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_CurrentB.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_CurrentC'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_CurrentC.set(dictInv[fooName])
 
                 # AC Voltage
                 data.skip_bytes(14)
@@ -308,48 +600,36 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VoltageAB.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_VoltageBC'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VoltageBC.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_VoltageCA'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VoltageCA.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_VoltageAN'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VoltageAN.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_VoltageBN'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VoltageBN.set(dictInv[fooName])
                 fooVal = trunc_float(data.decode_16bit_uint())
                 fooName = 'AC_VoltageCN'
                 if fooVal < 65535:
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VoltageCN.set(dictInv[fooName])
 
                 # AC Power
                 data.skip_bytes(4)
@@ -363,8 +643,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_Power.set(dictInv[fooName])
 
                # AC Frequency
                 data.skip_bytes(4)
@@ -378,8 +656,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_Frequency.set(dictInv[fooName])
 
                 # AC Apparent Power
                 data.skip_bytes(4)
@@ -393,8 +669,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VA.set(dictInv[fooName])
                 
                 # AC Reactive Power
                 data.skip_bytes(4)
@@ -408,8 +682,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_VAR.set(dictInv[fooName])
                 
                 # AC Power Factor
                 data.skip_bytes(4)
@@ -423,8 +695,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_PF.set(dictInv[fooName])
 
                 # AC Lifetime Energy Production
                 data.skip_bytes(6)
@@ -438,8 +708,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                AC_Energy_WH.set(dictInv[fooName])
                 
                 # DC Current
                 data.skip_bytes(4)
@@ -453,8 +721,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                DC_Current.set(dictInv[fooName])
 
                 # DC Voltage
                 data.skip_bytes(4)
@@ -468,8 +734,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                DC_Voltage.set(dictInv[fooName])
 
                 # DC Power
                 data.skip_bytes(4)
@@ -483,8 +747,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                DC_Power.set(dictInv[fooName])
                 
                 # Inverter Temp 
                 data.skip_bytes(10)
@@ -498,8 +760,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal * scalefactor
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                Temp_Sink.set(dictInv[fooName])
                 
                 # Inverter Operating State
                 data.skip_bytes(6)
@@ -510,8 +770,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                Status.set(dictInv[fooName])
                 
                 # Inverter Operating Status Code
                 # Register 40108
@@ -521,29 +779,16 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     dictInv[fooName] = fooVal
                 else:
                     dictInv[fooName] = 0.0
-                datapoint['fields'][fooName] = dictInv[fooName]
-                Status_Vendor.set(dictInv[fooName])
                 
-                datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
-
-                # Set the default value of ZERO for the ScaleFactor metrics for Prometheus
-                AC_Current_SF.set(0)
-                AC_Voltage_SF.set(0)
-                AC_Power_SF.set(0)
-                AC_Frequency_SF.set(0)
-                AC_VA_SF.set(0)
-                AC_VAR_SF.set(0)
-                AC_PF_SF.set(0)
-                AC_Energy_WH_SF.set(0)
-                DC_Current_SF.set(0)
-                DC_Voltage_SF.set(0)
-                DC_Power_SF.set(0)
-                Temp_SF.set(0)
-
                 logger.debug(f'Inverter')
                 for j, k in dictInv.items():
                     logger.debug(f'  {j}: {k}')
-                    
+
+                publish_metrics(dictInv, 'inverter', '')
+                logger.debug('Done publishing inverter metrics...')
+                             
+                datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
+
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
                 await solar_client.write(datapoint)
 
@@ -652,32 +897,24 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_Current.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_CurrentA'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_CurrentA.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_CurrentB'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_CurrentB.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_CurrentC'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_CurrentC.labels(metriclabel).set(dictM[fooName])
 
                    # AC Voltage
                     data.skip_bytes(18)
@@ -691,64 +928,48 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageLN.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VoltageAN'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageAN.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VoltageBN'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageBN.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VoltageCN'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageCN.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VoltageLL'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageLL.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VoltageAB'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageAB.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VoltageBC'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageBC.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VoltageCA'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VoltageCA.labels(metriclabel).set(dictM[fooName])
 
                     # AC Frequency
                     data.skip_bytes(4)
@@ -762,8 +983,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_Frequency.labels(metriclabel).set(dictM[fooName])
                     
                     # AC Real Power
                     data.skip_bytes(10)
@@ -777,32 +996,24 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_Power.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_Power_A'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_Power_A.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_Power_B'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_Power_B.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_Power_C'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_Power_C.labels(metriclabel).set(dictM[fooName])
                     
                     # AC Apparent Power
                     data.skip_bytes(10)
@@ -816,32 +1027,24 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VA.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VA_A'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VA_A.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VA_B'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VA_B.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VA_C'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VA_C.labels(metriclabel).set(dictM[fooName])
 
                     # AC Reactive Power
                     data.skip_bytes(10)
@@ -855,32 +1058,24 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VAR.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VAR_A'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VAR_A.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VAR_B'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VAR_B.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_VAR_C'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_VAR_C.labels(metriclabel).set(dictM[fooName])
 
                     # AC Power Factor
                     data.skip_bytes(10)
@@ -894,32 +1089,24 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_PF.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_PF_A'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_PF_A.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_PF_B'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_PF_B.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_16bit_int())
                     fooName = 'M_AC_PF_C'
                     if fooVal < 32768:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_AC_PF_C.labels(metriclabel).set(dictM[fooName])
 
                     # Accumulated AC Real Energy
                     data.skip_bytes(34)
@@ -933,64 +1120,48 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Exported.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_32bit_uint())
                     fooName = 'M_Exported_A'
                     if fooVal < 4294967295:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Exported_A.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_32bit_uint())
                     fooName = 'M_Exported_B'
                     if fooVal < 4294967295:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Exported_B.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_32bit_uint())
                     fooName = 'M_Exported_C'
                     if fooVal < 4294967295:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Exported_C.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_32bit_uint())
                     fooName = 'M_Imported'
                     if fooVal < 4294967295:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Imported.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_32bit_uint())
                     fooName = 'M_Imported_A'
                     if fooVal < 4294967295:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Imported_A.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_32bit_uint())
                     fooName = 'M_Imported_B'
                     if fooVal < 4294967295:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Imported_B.labels(metriclabel).set(dictM[fooName])
                     fooVal = trunc_float(data.decode_32bit_uint())
                     fooName = 'M_Imported_C'
                     if fooVal < 4294967295:
                         dictM[fooName] = fooVal * scalefactor
                     else:
                         dictM[fooName] = 0.0
-                    datapoint['fields'][fooName] = dictM[fooName]
-                    M_Imported_C.labels(metriclabel).set(dictM[fooName])
                    
                     # Accumulated AC Apparent Energy
                     #logger.debug(f'Apparent Energy SF: {str(np.int16(reg_block[69]))}')
@@ -1004,15 +1175,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname):
                     #datapoint['fields']['M_Imported_VA_B'] = trunc_float(((reg_block[65] << 16) + reg_block[66]) * scalefactor)
                     #datapoint['fields']['M_Imported_VA_C'] = trunc_float(((reg_block[67] << 16) + reg_block[68]) * scalefactor)
 
-                    # Set the default value of ZERO for the ScaleFactor metrics for Prometheus
-                    M_AC_Current_SF.labels(metriclabel).set(0.0)
-                    M_AC_Voltage_SF.labels(metriclabel).set(0.0)
-                    M_AC_Frequency_SF.labels(metriclabel).set(0.0)
-                    M_AC_Power_SF.labels(metriclabel).set(0.0)
-                    M_AC_VA_SF.labels(metriclabel).set(0.0)
-                    M_AC_VAR_SF.labels(metriclabel).set(0.0)
-                    M_AC_PF_SF.labels(metriclabel).set(0.0)
-                    M_Energy_W_SF.labels(metriclabel).set(0.0)
+                    publish_metrics(dictM, 'meter', metriclabel, x)
 
                     datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
 
@@ -1072,5 +1235,6 @@ if __name__ == '__main__':
     client = ModbusClient(args.inverter_ip, port=args.inverter_port, unit_id=args.unitid, auto_open=True)
     logger.debug('Starting Prometheus exporter on port {args.prometheus_exporter_port}...')
     start_http_server(args.prometheus_exporter_port)
+    #define_prometheus_metrics(args.meters)
     logger.debug('Running eventloop')
     asyncio.get_event_loop().run_until_complete(write_to_influx(args.influx_server, args.influx_port, args.meters, args.interval, args.influx_database))
