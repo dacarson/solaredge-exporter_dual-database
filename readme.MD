@@ -3,7 +3,7 @@ SolarEdge InfluxDB and Prometheus monitor
 
 This is a simple python tool to export SolarEdge inverter data to multiple monitoring platforms; <a href="https://www.influxdata.com/time-series-platform/influxdb/">InfluxDB</a> as well as <a href="https://prometheus.io/">Promethus</a>.  It works by reading the inverter
 data from a SolarEdge inverter that has its ModBusTCP interface activated.
-It then connects via TCP and reads the SunSpec modbus registers via ModBusTCP.
+It then connects via TCP, reads the SunSpec modbus registers via ModBusTCP, pushes the data to InfluxDB and exposes the values via an exporter for Prometheus consumption.
 
 See <https://www.solaredge.com/sites/default/files/sunspec-implementation-technical-note.pdf> for details of the SunSpec implementation from solarEdge.
 
