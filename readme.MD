@@ -18,7 +18,8 @@ docker run -d \
     -e INVERTER_PORT=<ModbusTCP port on Inverter - default=502> \
     -e METERS=<number of Modbus meters attached to Inverter - default=0 range=0-3> \
     -e UNITID=<Modbus ID of Inverter - default=1> \
-    -e PROMETHEUS_EXPORTER_PORT<Port to have the prometheus exporter listen on - default=2112> \
+    -e PROMETHEUS_EXPORTER_PORT=<Port to have the prometheus exporter listen on - default=2112> \
+    -e LEGACY_SUPPORT=<set to True to have Meter 1 prometheus metrics start with M_ vs M1_  default=False \
 
 ```
 Please replace user variables in the above command defined by <> with the correct values.  Environment variables can be excluded if the defaults are suitable.
