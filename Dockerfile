@@ -1,6 +1,6 @@
-FROM python:3.6-alpine
+FROM python:3.8-alpine
 
-MAINTAINER "https://github.com/CoolDil/Solaredge-influxdb"
+MAINTAINER "https://github.com/CoolDil/solaredge-exporter_dual-database"
 
 ENV INFLUX_SERVER=192.168.1.1
 ENV INFLUX_DATABASE=solaredge
@@ -11,6 +11,7 @@ ENV INVERTER_PORT=1502
 ENV UNITID=1
 ENV METERS=0
 ENV INTERVAL=5
+ENV LEGACY_SUPPORT=False
 
 EXPOSE 2112/tcp
 
@@ -21,4 +22,4 @@ RUN apk add --no-cache --update alpine-sdk && \
 
 ADD solaredge.py /
 
-CMD python3 /solaredge.py --influx_server $INFLUX_SERVER --influx_port $INFLUX_PORT --influx_database $INFLUX_DATABASE --prometheus_exporter_port $PROMETHEUS_EXPORTER_PORT --inverter_port $INVERTER_PORT --unitid $UNITID --meters $METERS --interval $INTERVAL $INVERTER_IP 
+CMD python3 /solaredge.py --influx_server $INFLUX_SERVER --influx_port $INFLUX_PORT --influx_database $INFLUX_DATABASE --prometheus_exporter_port $PROMETHEUS_EXPORTER_PORT --inverter_port $INVERTER_PORT --unitid $UNITID --meters $METERS --interval $INTERVAL --legacy_support $LEGACY_SUPPORT $INVERTER_IP 
