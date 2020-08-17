@@ -165,7 +165,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
         try:
             reg_block = {}
             dictInv = {}
-            reg_block = client.read_holding_registers(40069, 40)
+            reg_block = client.read_holding_registers(40069, 50)
             if reg_block:
                 # print(reg_block)
                 # reg_block[0] = Sun Spec DID
@@ -500,11 +500,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
 
                 # Start point is different for each meter
                 if x==1:
-                    reg_block = client.read_holding_registers(40188, 103)
+                    reg_block = client.read_holding_registers(40188, 105)
                 if x==2:
-                    reg_block = client.read_holding_registers(40362, 103)
+                    reg_block = client.read_holding_registers(40362, 105)
                 if x==3:
-                    reg_block = client.read_holding_registers(40537, 103)
+                    reg_block = client.read_holding_registers(40537, 105)
                 if reg_block:
                     # print(reg_block)
                     # reg_block[0] = AC Total current value
