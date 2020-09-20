@@ -24,7 +24,7 @@ RUN /bin/ash -c 'set -ex && \
        apk add --no-cache --update alpine-sdk && \
        pip3 install -r /requirements.txt && \
        apk del alpine-sdk; \
-    fi' && \
+    fi && \
     if [ "$ARCH" == "aarch64" ]; then \
        echo "aarch64" && \
        apk add --no-cache --update alpine-sdk && \
