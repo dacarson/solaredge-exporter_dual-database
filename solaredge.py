@@ -80,7 +80,10 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
         logger.error(f'Error during connection to InfluxDb {dbhost}: {e}')
         return
     logger.info('Database opened and initialized')
- 
+    
+    # Connect to the solaredge inverter
+    client = ModbusClient(args.inverter_ip, port=args.inverter_port, unit_id=args.unitid, auto_open=True)
+    
     # Read the common blocks on the Inverter
     while True:
         reg_block = {}
@@ -953,7 +956,6 @@ if __name__ == '__main__':
     print(f'InfluxDB:\tServer: {args.influx_server}:{args.influx_port}\n\t\tDatabase: {args.influx_database}')
     print(f'Prometheus:\tExporter Port: {args.prometheus_exporter_port}\n')
     print(f'Legacy Support:\t{args.legacy_support}\n')
-    client = ModbusClient(args.inverter_ip, port=args.inverter_port, unit_id=args.unitid, auto_open=True)
     logger.debug('Starting Prometheus exporter on port {args.prometheus_exporter_port}...')
     start_http_server(args.prometheus_exporter_port)
     #define_prometheus_metrics(args.meters)
