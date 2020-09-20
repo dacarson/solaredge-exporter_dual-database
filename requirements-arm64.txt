@@ -2,3 +2,5 @@ aioinflux
 pymodbusTCP
 pymodbus
 prometheus_client
+numpy
+pandas
