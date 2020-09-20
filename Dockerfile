@@ -16,9 +16,21 @@ ENV LEGACY_SUPPORT=False
 EXPOSE 2112/tcp
 
 ADD requirements.txt /
-RUN apk add --no-cache --update alpine-sdk && \
-    pip3 install -r /requirements.txt && \
-    apk del alpine-sdk
+ADD requirements-arm64.txt /
+RUN /bin/ash -c 'set -ex && \
+    ARCH=`uname -m` && \
+    if [ "$ARCH" == "x86_64" ]; then \
+       echo "x86_64" && \
+       apk add --no-cache --update alpine-sdk && \
+       pip3 install -r /requirements.txt && \
+       apk del alpine-sdk; \
+    fi' && \
+    if [ "$ARCH" == "aarch64" ]; then \
+       echo "aarch64" && \
+       apk add --no-cache --update alpine-sdk && \
+       pip3 install -r /requirements-arm64.txt && \
+       apk del alpine-sdk; \
+    fi'
 
 ADD solaredge.py /
 
