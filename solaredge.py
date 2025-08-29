@@ -28,7 +28,7 @@ def publish_metrics(dictobj, objtype, metriclabel, meternum=0, legacysupport=Fal
 
     global datapoint
 
-    if objtype == 'inverter':
+    if objtype == 'inverter' or objtype == 'battery':
         global promInv
         for key, value in dictobj.items():
             # InfluxDB metrics
@@ -59,11 +59,11 @@ def publish_metrics(dictobj, objtype, metriclabel, meternum=0, legacysupport=Fal
                 else:
                     promMeter[metricname] = Gauge(metricname, metricname + ' - ' + metriclabel)
                     promMeter[metricname].set(value)               
-                   
+                  
 ############################################################
 
 
-async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysupport):
+async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname, legacysupport, uname, passw):
     global client
     global datapoint
     global reg_block
@@ -74,8 +74,8 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
         return float('%.2f' % floatval)
 
     try:
-        solar_client = InfluxDBClient(host=dbhost, port=dbport, db=dbname)
-        await solar_client.create_database(db=dbname)
+        solar_client = InfluxDBClient(host=dbhost, port=dbport, username=uname, password=passw, db=dbname)
+        # await solar_client.create_database(db=dbname)
     except ClientConnectionError as e:
         logger.error(f'Error during connection to InfluxDb {dbhost}: {e}')
         return
@@ -89,7 +89,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
         reg_block = {}
         reg_block = client.read_holding_registers(40004, 65)
         if reg_block:
-            decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
+            decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
             InvManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
             InvModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
             Invfoo = decoder.decode_string(16).decode('UTF-8')
@@ -108,11 +108,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
             break
         else:
             # Error during data receive
-            if client.last_error() == 2:
-                logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
-            elif client.last_error() == 3 or client.last_error() == 4:
+            if client.last_error == 2:
+                logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
+            elif client.last_error == 3 or client.last_error == 4:
                 logger.error('Send or receive error!')
-            elif client.last_error() == 5:
+            elif client.last_error == 5:
                 logger.error('Timeout during send or receive operation!')
             await asyncio.sleep(period)
 
@@ -130,7 +130,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
                 if x==3:
                     reg_block = client.read_holding_registers(40471, 65)       
                 if reg_block:
-                    decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
+                    decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
                     MManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
                     MModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
                     MOption = decoder.decode_string(16).decode('UTF-8')
@@ -153,11 +153,66 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
                     connflag = True
                 else:
                     # Error during data receive
-                    if client.last_error() == 2:
-                        logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
-                    elif client.last_error() == 3 or client.last_error() == 4:
+                    if client.last_error == 2:
+                        logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
+                    elif client.last_error == 3 or client.last_error == 4:
                         logger.error('Send or receive error!')
-                    elif client.last_error() == 5:
+                    elif client.last_error == 5:
+                        logger.error('Timeout during send or receive operation!')
+                    await asyncio.sleep(period)
+            if connflag:
+                break
+
+    # Read the common blocks on the meter/s (if present)
+    battflag = False
+    if mbbatteries >= 1:
+        while True:
+            dictBattery = []
+            for x in range(1, mbbatteries+1):
+                reg_block = {}
+                if x==1:
+                    reg_block = client.read_holding_registers(57600, 76)
+                if x==2:
+                    reg_block = client.read_holding_registers(57856, 76)
+                if reg_block:
+                    decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+                    BManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
+                    BModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
+                    # MOption = decoder.decode_string(16).decode('UTF-8')
+                    BVersion = decoder.decode_string(32).decode('UTF-8') #decoder.decode_bits()
+                    BSerialNumber = decoder.decode_string(32).decode('UTF-8')
+                    BDeviceAddress = decoder.decode_16bit_uint()
+                    decoder.skip_bytes(2)
+                    BRatedEnergy = decoder.decode_32bit_float()
+                    BMaxChargePower = decoder.decode_32bit_float()
+                    BMaxDischargePower = decoder.decode_32bit_float()
+                    BMaxChargePeakPower = decoder.decode_32bit_float()
+                    BMaxDischargePeakPower = decoder.decode_32bit_float()
+                    fooLabel = BManufacturer.split('\x00')[0] + '(' + BSerialNumber.split('\x00')[0] + ')'
+                    dictBattery.append(fooLabel)
+                    print('*' * 60)
+                    print('* Battery ' + str(x) + ' Info')
+                    print('*' * 60)
+                    print(' Manufacturer: ' + BManufacturer)
+                    print(' Model: ' + BModel)
+                    print(' Version: ' + BVersion)
+                    print(' Serial Number: ' + BSerialNumber)
+                    print(' ModBus ID: ' + str(BDeviceAddress))
+                    print(' Rated Energy: ' + str(BRatedEnergy))
+                    print(' Max Charge Power: ' + str(BMaxChargePower))
+                    print(' Max Discharge Power: ' + str(BMaxDischargePower))
+                    print(' Max Charge Peak Power: ' + str(BMaxChargePeakPower))
+                    print(' Max Discharge Peak Power: ' + str(BMaxDischargePeakPower))
+                    if x==mbbatteries:
+                        print('*' * 60)
+                    connflag = True
+                else:
+                    # Error during data receive
+                    if client.last_error == 2:
+                        logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
+                    elif client.last_error == 3 or client.last_error == 4:
+                        logger.error('Send or receive error!')
+                    elif client.last_error == 5:
                         logger.error('Timeout during send or receive operation!')
                     await asyncio.sleep(period)
             if connflag:
@@ -209,14 +264,12 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
                 # reg_block[38] = Inverter Operating State
                 # reg_block[39] = Inverter Status Code
                 datapoint = {
-                    'measurement': 'SolarEdge',
-                    'tags': {},
+                    'measurement': 'Inverter',
                     'fields': {}
                 }
                 logger.debug(f'inverter reg_block: {str(reg_block)}')
-                datapoint['tags']['inverter'] = str(1)
 
-                data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
+                data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
 
                 # SunSpec DID
                 # Register 40069
@@ -487,11 +540,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
 
             else:
                 # Error during data receive
-                if client.last_error() == 2:
-                    logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
-                elif client.last_error() == 3 or client.last_error() == 4:
+                if client.last_error == 2:
+                    logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
+                elif client.last_error == 3 or client.last_error == 4:
                     logger.error('Send or receive error!')
-                elif client.last_error() == 5:
+                elif client.last_error == 5:
                     logger.error('Timeout during send or receive operation!')
                 await asyncio.sleep(period)
                     
@@ -570,14 +623,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
                     metriclabel = dictMeterLabel[x-1]
                     # Clear data from inverter, otherwise we publish that again!
                     datapoint = {
-                        'measurement': 'SolarEdge',
-                        'tags': {
-                            'meter': dictMeterLabel[x-1]
-                        },
+                        'measurement': dictMeterLabel[x-1],
                         'fields': {}
                     }
                     
-                    data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.Big, wordorder=Endian.Big)
+                    data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
 
                     # SunSpec DID
                     # Register 40188
@@ -910,6 +960,207 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
 
                 else:
                     # Error during data receive
+                    if client.last_error == 2:
+                        logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
+                    elif client.last_error == 3 or client.last_error == 4:
+                        logger.error('Send or receive error!')
+                    elif client.last_error == 5:
+                        logger.error('Timeout during send or receive operation!')
+                    await asyncio.sleep(period)
+     
+            for x in range(1, mbbatteries+1):
+                # Now loop through this for each meter that is attached.
+                logger.debug(f'Battery={str(x)}')
+                reg_block = {}
+                dictB = {}
+
+                # Start point is different for each meter
+                if x==1:
+                    reg_block = client.read_holding_registers(57666, 72)
+                if x==2:
+                    reg_block = client.read_holding_registers(57922, 72)
+                if reg_block:
+                    # print(reg_block)
+                    # reg_block[0] = Battery Rated Energy
+                    # reg_block[1] = Battery Max Charge Continues Power
+                    # reg_block[2] = Batter Max Discharge Continues Power 
+                    # reg_block[3] = Batter Max Charge Peak Power
+                    # reg_block[4] = Batter Max Discharge Peak Power
+                    # reg_block[5] = Reserved
+                    # reg_block[6] = Reserved
+                    # reg_block[7] = Reserved
+                    # reg_block[8] = Reserved
+                    # reg_block[9] = Reserved
+                    # reg_block[10] = Reserved
+                    # reg_block[11] = Reserved
+                    # reg_block[12] = Reserved
+                    # reg_block[13] = Reserved
+                    # reg_block[14] = Reserved
+                    # reg_block[15] = Reserved
+                    # reg_block[16] = Reserved
+                    # reg_block[17] = Reserved
+                    # reg_block[18] = Reserved
+                    # reg_block[19] = Reserved
+                    # reg_block[20] = Reserved
+                    # reg_block[21] = Batter Average Temperature
+                    # reg_block[22] = Batter Max Temperature
+                    # reg_block[23] = Batter Instantaneous Voltage
+                    # reg_block[24] = Batter Instantaneous Current
+                    # reg_block[25] = Batter Instantaneous Power
+                    # reg_block[26] = Batter Lifetime Export Energy Counter
+                    # reg_block[27] = Batter Lifetime Export Energy Counter
+                    # reg_block[28] = Batter Lifetime Import Energy Counter
+                    # reg_block[29] = Batter Lifetime Import Energy Counter
+                    # reg_block[30] = Batter Max Energy
+                    # reg_block[31] = Batter Available Energy
+                    # reg_block[32] = Batter State of Health 
+                    # reg_block[33] = Batter State of Energy
+                    # reg_block[34] = Batter Status
+                    # reg_block[35] = Batter Status Internal
+                    # ... ignore the rest
+                    # reg_block[36] = Batter Events Log
+                    # reg_block[38] = Batter Events Log
+                    # reg_block[40] = Batter Events Log
+                    # reg_block[42] = Batter Events Log
+                    # reg_block[44] = Batter Events Log Internal
+                    # reg_block[46] = Batter Events Log Internal
+                    # reg_block[48] = Batter Events Log Internal
+                    # reg_block[50] = Batter Events Log Internal
+                    # reg_block[52] = Reserved....
+                    logger.debug(f'meter reg_block: {str(reg_block)}')
+                
+                    # Set the Label to use for the Battery Metrics for Prometheus
+                    metriclabel = dictBattery[x-1]
+                    # Clear data from inverter, otherwise we publish that again!
+                    datapoint = {
+                        'measurement': dictBattery[x-1],
+                        'fields': {}
+                    }
+                    
+                    data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+
+                    # Battery Rated Energy
+                    # Register 57666
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Rated_Energy'
+                    dictB[fooName] = fooVal
+
+                    # Battery Max Charge Continues Power
+                    # Register 57668
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Max_Charge_Continues_Power'
+                    dictB[fooName] = fooVal
+
+                    # Battery Max Discharge Continues Power
+                    # Register 57670
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Max_Discharge_Continues_Power'
+                    dictB[fooName] = fooVal
+
+                    # Battery Max Charge Peak Power
+                    # Register 57672
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Max_Charge_Peak_Power'
+                    dictB[fooName] = fooVal
+
+                    # Battery Max Discharge Peak Power
+                    # Register 57674
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Max_Discharge_Peak_Power'
+                    dictB[fooName] = fooVal
+
+                    data.skip_bytes(64)
+                    # Battery Average Temperature
+                    # Register 57708
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Average_Temperature'
+                    dictB[fooName] = fooVal
+
+                    # Battery Max Temperature
+                    # Register 57710
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Max_Temperature'
+                    dictB[fooName] = fooVal
+
+                    # Battery Instantaneous Voltage
+                    # Register 57712
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Instantaneous_Voltage'
+                    dictB[fooName] = fooVal
+
+                    # Battery Instantaneous Current
+                    # Register 57714
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Instantaneous_Current'
+                    dictB[fooName] = fooVal
+
+                    # Battery Instantaneous Power
+                    # Register 57716
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Instantaneous_Power'
+                    dictB[fooName] = fooVal
+
+                    # Battery Lifetime Export Energy Counter
+                    # Register 57718
+                    fooVal = data.decode_64bit_uint()
+                    fooName = 'B_Lifetime_Export_Energy_Counter'
+                    dictB[fooName] = fooVal
+
+                    # Battery Lifetime Import Energy Counter
+                    # Register 57722
+                    fooVal = data.decode_64bit_uint()
+                    fooName = 'B_Lifetime_Import_Energy_Counter'
+                    dictB[fooName] = fooVal
+
+                    # Battery Max Energy
+                    # Register 57726
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Max_Energy'
+                    dictB[fooName] = fooVal
+
+                    # Battery Available Energy
+                    # Register 57728
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_Available_Energy'
+                    dictB[fooName] = fooVal
+
+                    # Battery State of Health 
+                    # Register 57730
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_State_of_Health'
+                    dictB[fooName] = fooVal
+
+                    # Battery State of Energy 
+                    # Register 57732
+                    fooVal = data.decode_32bit_float()
+                    fooName = 'B_State_of_Energy'
+                    dictB[fooName] = fooVal
+
+                    # Battery Status
+                    # Register 57734
+                    fooVal = data.decode_32bit_uint()
+                    fooName = 'B_Status'
+                    dictB[fooName] = fooVal
+
+                    # Battery Status Internal
+                    # Register 57736
+                    fooVal = data.decode_32bit_uint()
+                    fooName = 'B_Status_Internal'
+                    dictB[fooName] = fooVal
+
+                    publish_metrics(dictB, 'battery', metriclabel, x, legacysupport)
+
+                    datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
+
+                    logger.debug(f'Battery: {metriclabel}')
+                    for j, k in dictB.items():
+                        logger.debug(f'  {j}: {k}')
+                        
+                    logger.debug(f'Writing to Influx: {str(datapoint)}')
+                    await solar_client.write(datapoint)
+
+                else:
+                    # Error during data receive
                     if client.last_error() == 2:
                         logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
                     elif client.last_error() == 3 or client.last_error() == 4:
@@ -917,7 +1168,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
                     elif client.last_error() == 5:
                         logger.error('Timeout during send or receive operation!')
                     await asyncio.sleep(period)
-                
+           
         except InfluxDBWriteError as e:
             logger.error(f'Failed to write to InfluxDb: {e}')
         except IOError as e:
@@ -929,12 +1180,15 @@ async def write_to_influx(dbhost, dbport, mbmeters, period, dbname, legacysuppor
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--influx_server', default='192.168.192.41')
+    parser.add_argument('--influx_server', default='localhost')
     parser.add_argument('--influx_port', type=int, default=8086)
-    parser.add_argument('--influx_database', default='solaredgetemp')
-    parser.add_argument('--inverter_port', type=int, default=1502, help='ModBus TCP port number to use')
+    parser.add_argument('--influx_database', default='solaredge')
+    parser.add_argument('--influx_user', help='InfluxDB username')
+    parser.add_argument('--influx_pass', help='InfluxDB password')
+    parser.add_argument('--inverter_port', type=int, default=502, help='ModBus TCP port number to use')
     parser.add_argument('--unitid', type=int, default=1, help='ModBus unit id to use in communication')
     parser.add_argument('--meters', type=int, default=0, help='Number of ModBus meters attached to inverter (0-3)')
+    parser.add_argument('--batteries', type=int, default=0, help='Number of ModBus batteries attached to inverter (0-2)')
     parser.add_argument('--prometheus_exporter_port', type=int, default=2112, help='Port on which the prometheus exporter will listen on')
     parser.add_argument('--interval', type=int, default=5, help='Time (seconds) between polling')
     parser.add_argument('--legacy_support', type=bool, default=False, help='Set to true so Meter 1 prometheus metrics start with "M_" vs "M1_"')
@@ -960,4 +1214,4 @@ if __name__ == '__main__':
     start_http_server(args.prometheus_exporter_port)
     #define_prometheus_metrics(args.meters)
     logger.debug('Running eventloop')
-    asyncio.get_event_loop().run_until_complete(write_to_influx(args.influx_server, args.influx_port, args.meters, args.interval, args.influx_database, args.legacy_support))
+    asyncio.get_event_loop().run_until_complete(write_to_influx(args.influx_server, args.influx_port, args.meters, args.batteries, args.interval, args.influx_database, args.legacy_support, args.influx_user, args.influx_pass))
