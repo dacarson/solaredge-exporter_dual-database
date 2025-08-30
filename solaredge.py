@@ -11,6 +11,7 @@ import asyncio
 from aioinflux import InfluxDBClient, InfluxDBWriteError
 from prometheus_client import Gauge
 from prometheus_client import start_http_server
+from prometheus_client import Counter, Histogram
 
 datapoint = {
     'measurement': 'SolarEdge',
@@ -21,6 +22,12 @@ reg_block = {}
 promInv = {}
 promMeter = {}
 logger = logging.getLogger('solaredge')
+
+# Prometheus counters/histogram for Modbus I/O health
+modbus_send_errors = Counter('modbus_send_errors_total', 'Modbus send() failures', ['section'])
+modbus_recv_errors = Counter('modbus_recv_errors_total', 'Modbus recv() failures', ['section'])
+modbus_timeouts    = Counter('modbus_timeouts_total', 'Modbus timeouts', ['section'])
+modbus_req_latency_sec = Histogram('modbus_request_latency_seconds', 'ReadHoldingRegisters latency', ['section'])
 
 ############################################################
 
@@ -58,7 +65,7 @@ def publish_metrics(dictobj, objtype, metriclabel, meternum=0, legacysupport=Fal
                     promMeter[metricname].set(value)
                 else:
                     promMeter[metricname] = Gauge(metricname, metricname + ' - ' + metriclabel)
-                    promMeter[metricname].set(value)               
+                    promMeter[metricname].set(value)
                   
 ############################################################
 
@@ -82,12 +89,61 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
     logger.info('Database opened and initialized')
     
     # Connect to the solaredge inverter
-    client = ModbusClient(args.inverter_ip, port=args.inverter_port, unit_id=args.unitid, auto_open=True)
-    
+    client = ModbusClient(args.inverter_ip, port=args.inverter_port, unit_id=args.unitid, auto_open=True, timeout=10.0)
+
+    async def read_regs(addr: int, count: int, section: str):
+        """Read holding registers with labeled metrics and differentiated error handling."""
+        # Measure request latency for this section
+        with modbus_req_latency_sec.labels(section=section).time():
+            rb = client.read_holding_registers(addr, count)
+        if rb:
+            return rb
+        le = client.last_error
+        if le == 3:  # send error
+            modbus_send_errors.labels(section=section).inc()
+            logger.error(f'Send error (write failed); section={section}. Reconnecting socket.')
+            try:
+                client.close()
+            except Exception:
+                pass
+            await asyncio.sleep(period)
+            return None
+        if le == 4:  # receive error
+            modbus_recv_errors.labels(section=section).inc()
+            logger.warning(f'Receive error; section={section}. Retrying once on same socket.')
+            with modbus_req_latency_sec.labels(section=section).time():
+                rb = client.read_holding_registers(addr, count)
+            if rb:
+                return rb
+            logger.error(f'Receive error persisted; section={section}. Reconnecting socket.')
+            try:
+                client.close()
+            except Exception:
+                pass
+            await asyncio.sleep(period)
+            return None
+        if le == 5:  # timeout
+            modbus_timeouts.labels(section=section).inc()
+            logger.error(f'Timeout; section={section}. Reconnecting socket.')
+            try:
+                client.close()
+            except Exception:
+                pass
+            await asyncio.sleep(period)
+            return None
+        # Unknown or unexpected error code
+        logger.error(f'Unknown Modbus error last_error={le}; section={section}. Reconnecting socket.')
+        try:
+            client.close()
+        except Exception:
+            pass
+        await asyncio.sleep(period)
+        return None
+
     # Read the common blocks on the Inverter
     while True:
         reg_block = {}
-        reg_block = client.read_holding_registers(40004, 65)
+        reg_block = await read_regs(40004, 65, "inv_info")
         if reg_block:
             decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
             InvManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
@@ -107,14 +163,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
             print(' ModBus ID: ' + str(InvDeviceAddress))
             break
         else:
-            # Error during data receive
-            if client.last_error == 2:
-                logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
-            elif client.last_error == 3 or client.last_error == 4:
-                logger.error('Send or receive error!')
-            elif client.last_error == 5:
-                logger.error('Timeout during send or receive operation!')
-            await asyncio.sleep(period)
+            continue
 
     # Read the common blocks on the meter/s (if present)
     connflag = False
@@ -124,11 +173,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
             for x in range(1, mbmeters+1):
                 reg_block = {}
                 if x==1:
-                    reg_block = client.read_holding_registers(40123, 65)
+                    reg_block = await read_regs(40123, 65, f"meter_info_{x}")
                 if x==2:
-                    reg_block = client.read_holding_registers(40297, 65)
+                    reg_block = await read_regs(40297, 65, f"meter_info_{x}")
                 if x==3:
-                    reg_block = client.read_holding_registers(40471, 65)       
+                    reg_block = await read_regs(40471, 65, f"meter_info_{x}")
                 if reg_block:
                     decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
                     MManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
@@ -152,18 +201,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                         print('*' * 60)
                     connflag = True
                 else:
-                    # Error during data receive
-                    if client.last_error == 2:
-                        logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
-                    elif client.last_error == 3 or client.last_error == 4:
-                        logger.error('Send or receive error!')
-                    elif client.last_error == 5:
-                        logger.error('Timeout during send or receive operation!')
-                    await asyncio.sleep(period)
+                    continue
             if connflag:
                 break
 
-    # Read the common blocks on the meter/s (if present)
+    # Read the common blocks on the battery/s (if present)
     battflag = False
     if mbbatteries >= 1:
         while True:
@@ -171,9 +213,9 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
             for x in range(1, mbbatteries+1):
                 reg_block = {}
                 if x==1:
-                    reg_block = client.read_holding_registers(57600, 76)
+                    reg_block = await read_regs(57600, 76, f"battery_info_{x}")
                 if x==2:
-                    reg_block = client.read_holding_registers(57856, 76)
+                    reg_block = await read_regs(57856, 76, f"battery_info_{x}")
                 if reg_block:
                     decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
                     BManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
@@ -207,14 +249,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                         print('*' * 60)
                     connflag = True
                 else:
-                    # Error during data receive
-                    if client.last_error == 2:
-                        logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
-                    elif client.last_error == 3 or client.last_error == 4:
-                        logger.error('Send or receive error!')
-                    elif client.last_error == 5:
-                        logger.error('Timeout during send or receive operation!')
-                    await asyncio.sleep(period)
+                    continue
             if connflag:
                 break
 
@@ -223,7 +258,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
         try:
             reg_block = {}
             dictInv = {}
-            reg_block = client.read_holding_registers(40069, 50)
+            reg_block = await read_regs(40069, 50, "inverter")
             if reg_block:
                 # print(reg_block)
                 # reg_block[0] = Sun Spec DID
@@ -480,7 +515,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                 else:
                     dictInv[fooName] = 0.0
                 
-                # Inverter Temp 
+                # Inverter Temp
                 data.skip_bytes(10)
                 # Register 40106
                 scalefactor = 10**data.decode_16bit_int()
@@ -537,16 +572,10 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
 
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
                 await solar_client.write(datapoint)
+                logger.info('Wrote Inverter datapoint to Influx.')
 
             else:
-                # Error during data receive
-                if client.last_error == 2:
-                    logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
-                elif client.last_error == 3 or client.last_error == 4:
-                    logger.error('Send or receive error!')
-                elif client.last_error == 5:
-                    logger.error('Timeout during send or receive operation!')
-                await asyncio.sleep(period)
+                continue
                     
             for x in range(1, mbmeters+1):
                 # Now loop through this for each meter that is attached.
@@ -556,11 +585,15 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
 
                 # Start point is different for each meter
                 if x==1:
-                    reg_block = client.read_holding_registers(40188, 105)
+                    reg_block = await read_regs(40188, 105, f"meter{x}")
                 if x==2:
-                    reg_block = client.read_holding_registers(40362, 105)
+                    reg_block = await read_regs(40362, 105, f"meter{x}")
                 if x==3:
-                    reg_block = client.read_holding_registers(40537, 105)
+                    reg_block = await read_regs(40537, 105, f"meter{x}")
+                # Guard for meter labels
+                if not dictMeterLabel or len(dictMeterLabel) < x:
+                    logger.error(f'Meter labels not initialized for meter {x}; skipping this read.')
+                    continue
                 if reg_block:
                     # print(reg_block)
                     # reg_block[0] = AC Total current value
@@ -599,7 +632,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     # reg_block[33] = Phase B Power Factor
                     # reg_block[34] = Phase C Power Factor
                     # reg_block[35] = Power Factor scale factor
-                    # reg_block[36] = Total Exported Real Energy 
+                    # reg_block[36] = Total Exported Real Energy
                     # reg_block[38] = Phase A Exported Real Energy
                     # reg_block[40] = Phase B Exported Real Energy
                     # reg_block[42] = Phase C Exported Real Energy
@@ -608,7 +641,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     # reg_block[48] = Phase B Imported Real Energy
                     # reg_block[50] = Phase C Imported Real Energy
                     # reg_block[52] = Real Energy scale factor
-                    # reg_block[53] = Total Exported Real Energy 
+                    # reg_block[53] = Total Exported Real Energy
                     # reg_block[55] = Phase A Exported Real Energy
                     # reg_block[57] = Phase B Exported Real Energy
                     # reg_block[59] = Phase C Exported Real Energy
@@ -928,7 +961,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     # Accumulated AC Apparent Energy
                     #logger.debug(f'Apparent Energy SF: {str(np.int16(reg_block[69]))}')
                     #scalefactor = np.float_power(10,np.int16(reg_block[69]))
-                    #datapoint['fields']['M_Exported_VA'] = trunc_float(((reg_block[53] << 16) + reg_block[54]) * scalefactor) 
+                    #datapoint['fields']['M_Exported_VA'] = trunc_float(((reg_block[53] << 16) + reg_block[54]) * scalefactor)
                     #datapoint['fields']['M_Exported_VA_A'] = trunc_float(((reg_block[55] << 16) + reg_block[56]) * scalefactor)
                     #datapoint['fields']['M_Exported_VA_B'] = trunc_float(((reg_block[57] << 16) + reg_block[58]) * scalefactor)
                     #datapoint['fields']['M_Exported_VA_C'] = trunc_float(((reg_block[59] << 16) + reg_block[60]) * scalefactor)
@@ -957,33 +990,27 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                         
                     logger.debug(f'Writing to Influx: {str(datapoint)}')
                     await solar_client.write(datapoint)
+                    logger.info(f'Wrote Meter {x} ({metriclabel}) datapoint to Influx.')
 
                 else:
-                    # Error during data receive
-                    if client.last_error == 2:
-                        logger.error(f'Failed to connect to SolarEdge inverter {client.host}!')
-                    elif client.last_error == 3 or client.last_error == 4:
-                        logger.error('Send or receive error!')
-                    elif client.last_error == 5:
-                        logger.error('Timeout during send or receive operation!')
-                    await asyncio.sleep(period)
+                    continue
      
             for x in range(1, mbbatteries+1):
-                # Now loop through this for each meter that is attached.
+                # Now loop through this for each battery that is attached.
                 logger.debug(f'Battery={str(x)}')
                 reg_block = {}
                 dictB = {}
 
-                # Start point is different for each meter
+                # Start point is different for each battery
                 if x==1:
-                    reg_block = client.read_holding_registers(57666, 72)
+                    reg_block = await read_regs(57666, 72, f"battery{x}")
                 if x==2:
-                    reg_block = client.read_holding_registers(57922, 72)
+                    reg_block = await read_regs(57922, 72, f"battery{x}")
                 if reg_block:
                     # print(reg_block)
                     # reg_block[0] = Battery Rated Energy
                     # reg_block[1] = Battery Max Charge Continues Power
-                    # reg_block[2] = Batter Max Discharge Continues Power 
+                    # reg_block[2] = Batter Max Discharge Continues Power
                     # reg_block[3] = Batter Max Charge Peak Power
                     # reg_block[4] = Batter Max Discharge Peak Power
                     # reg_block[5] = Reserved
@@ -1013,7 +1040,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     # reg_block[29] = Batter Lifetime Import Energy Counter
                     # reg_block[30] = Batter Max Energy
                     # reg_block[31] = Batter Available Energy
-                    # reg_block[32] = Batter State of Health 
+                    # reg_block[32] = Batter State of Health
                     # reg_block[33] = Batter State of Energy
                     # reg_block[34] = Batter Status
                     # reg_block[35] = Batter Status Internal
@@ -1124,13 +1151,13 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     fooName = 'B_Available_Energy'
                     dictB[fooName] = fooVal
 
-                    # Battery State of Health 
+                    # Battery State of Health
                     # Register 57730
                     fooVal = data.decode_32bit_float()
                     fooName = 'B_State_of_Health'
                     dictB[fooName] = fooVal
 
-                    # Battery State of Energy 
+                    # Battery State of Energy
                     # Register 57732
                     fooVal = data.decode_32bit_float()
                     fooName = 'B_State_of_Energy'
@@ -1158,16 +1185,10 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                         
                     logger.debug(f'Writing to Influx: {str(datapoint)}')
                     await solar_client.write(datapoint)
+                    logger.info(f'Wrote Battery {x} ({metriclabel}) datapoint to Influx.')
 
                 else:
-                    # Error during data receive
-                    if client.last_error() == 2:
-                        logger.error(f'Failed to connect to SolarEdge inverter {client.host()}!')
-                    elif client.last_error() == 3 or client.last_error() == 4:
-                        logger.error('Send or receive error!')
-                    elif client.last_error() == 5:
-                        logger.error('Timeout during send or receive operation!')
-                    await asyncio.sleep(period)
+                    continue
            
         except InfluxDBWriteError as e:
             logger.error(f'Failed to write to InfluxDb: {e}')
@@ -1210,7 +1231,7 @@ if __name__ == '__main__':
     print(f'InfluxDB:\tServer: {args.influx_server}:{args.influx_port}\n\t\tDatabase: {args.influx_database}')
     print(f'Prometheus:\tExporter Port: {args.prometheus_exporter_port}\n')
     print(f'Legacy Support:\t{args.legacy_support}\n')
-    logger.debug('Starting Prometheus exporter on port {args.prometheus_exporter_port}...')
+    logger.debug(f'Starting Prometheus exporter on port {args.prometheus_exporter_port}...')
     start_http_server(args.prometheus_exporter_port)
     #define_prometheus_metrics(args.meters)
     logger.debug('Running eventloop')
