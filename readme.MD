@@ -1,7 +1,7 @@
 SolarEdge InfluxDB and Prometheus monitor
 ==========================
 
-This is a simple python tool to export SolarEdge inverter data to multiple monitoring platforms; <a href="https://www.influxdata.com/time-series-platform/influxdb/">InfluxDB</a> as well as <a href="https://prometheus.io/">Promethus</a>.  It works by reading the inverter
+This is a simple python tool to export SolarEdge inverter data to multiple monitoring platforms; <a href="https://www.influxdata.com/time-series-platform/influxdb/">InfluxDB</a> as well as <a href="https://prometheus.io/">Prometheus</a>.  It works by reading the inverter
 data from a SolarEdge inverter that has its ModBusTCP interface activated.
 It then connects via TCP, reads the SunSpec modbus registers via ModBusTCP, pushes the data to InfluxDB and exposes the values via an exporter for Prometheus consumption.
 
@@ -15,6 +15,9 @@ Features
 * **Configurable Polling**: Adjustable data collection interval
 * **Legacy Compatibility**: Optional legacy meter naming convention support
 * **Comprehensive Metrics**: AC/DC power, voltage, current, frequency, temperature, and energy data
+* **Modbus Health Monitoring**: Prometheus metrics for Modbus communication health and latency
+* **Debug Logging**: Optional debug logging with configurable verbosity levels
+* **Async Operation**: Asynchronous data collection for improved performance
 
 See <https://www.solaredge.com/sites/default/files/sunspec-implementation-technical-note.pdf> for details of the SunSpec implementation from solarEdge.
 
@@ -22,12 +25,12 @@ Docker Usage
 ---
 ```
 docker run -d \ 
-    -e INFLUX_SERVER=<hostname/IP of InfluxDB server - default=192.168.1.1> \ 
+    -e INFLUX_SERVER=<hostname/IP of InfluxDB server - default=localhost> \ 
     -e INFLUX_PORT=<port InfluxDB is running on - default=8086> \ 
     -e INFLUX_DATABASE=<name of the InfluxDB database - default=solaredge> \
     -e INFLUX_USER=<InfluxDB username - optional> \
     -e INFLUX_PASS=<InfluxDB password - optional> \
-    -e INVERTER_IP=<hostname/IP of SolarEdge Inverter - default=192.168.1.2> \
+    -e INVERTER_IP=<hostname/IP of SolarEdge Inverter - required> \
     -e INVERTER_PORT=<ModbusTCP port on Inverter - default=502> \
     -e METERS=<number of Modbus meters attached to Inverter - default=0 range=0-3> \
     -e BATTERIES=<number of Modbus batteries attached to Inverter - default=0 range=0-2> \
@@ -35,6 +38,7 @@ docker run -d \
     -e PROMETHEUS_EXPORTER_PORT=<Port to have the prometheus exporter listen on - default=2112> \
     -e INTERVAL=<polling interval in seconds - default=5> \
     -e LEGACY_SUPPORT=<set to True to have Meter 1 prometheus metrics start with M_ vs M1_  default=False> \
+    -e DEBUG=<set to True to enable debug logging - default=False> \
 
 ```
 Please replace user variables in the above command defined by <> with the correct values.  Environment variables can be excluded if the defaults are suitable.
@@ -50,6 +54,7 @@ docker run -d \
     -e INFLUX_USER=admin \
     -e INFLUX_PASS=password123 \
     -e INTERVAL=10 \
+    -e DEBUG=True \
 
 ```
 
@@ -70,4 +75,4 @@ In addition, you can specify additional flags to customize the tool:
 * `--prometheus_exporter_port` specifies the port for Prometheus scraping (default 2112)
 * `--interval` specifies the polling interval in seconds (default 5)
 * `--legacy_support` enables legacy meter naming for Meter 1 (M_ vs M1_ prefix) (default False)
-* `-d` or `--debug` activates debug logging
+* `-d` or `--debug` activates debug logging (can be used multiple times for increased verbosity)
