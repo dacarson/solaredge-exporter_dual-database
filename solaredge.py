@@ -455,8 +455,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                 logger.debug('Done publishing inverter metrics...')
                 datapoint['time'] = str(datetime.datetime.now(datetime.UTC).isoformat())
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
-                write_point(datapoint)
-                logger.info('Wrote Inverter datapoint to Influx.')
+                try:
+                    write_point(datapoint)
+                    logger.info('Wrote Inverter datapoint to Influx.')
+                except Exception as e:
+                    logger.error(f'Failed to write inverter data to InfluxDB: {e}')
 
             else:
                 continue
@@ -710,8 +713,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     for j, k in dictM.items():
                         logger.debug(f'  {j}: {k}')
                     logger.debug(f'Writing to Influx: {str(datapoint)}')
-                    write_point(datapoint)
-                    logger.info(f'Wrote Meter {x} ({metriclabel}) datapoint to Influx.')
+                    try:
+                        write_point(datapoint)
+                        logger.info(f'Wrote Meter {x} ({metriclabel}) datapoint to Influx.')
+                    except Exception as e:
+                        logger.error(f'Failed to write meter {x} ({metriclabel}) data to InfluxDB: {e}')
 
                 else:
                     continue
@@ -863,8 +869,11 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     for j, k in dictB.items():
                         logger.debug(f'  {j}: {k}')
                     logger.debug(f'Writing to Influx: {str(datapoint)}')
-                    write_point(datapoint)
-                    logger.info(f'Wrote Battery {x} ({metriclabel}) datapoint to Influx.')
+                    try:
+                        write_point(datapoint)
+                        logger.info(f'Wrote Battery {x} ({metriclabel}) datapoint to Influx.')
+                    except Exception as e:
+                        logger.error(f'Failed to write battery {x} ({metriclabel}) data to InfluxDB: {e}')
 
                 else:
                     continue
