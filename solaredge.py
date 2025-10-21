@@ -194,6 +194,8 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     reg_block = await read_regs(57600, 76, f"battery_info_{x}")
                 if x==2:
                     reg_block = await read_regs(57856, 76, f"battery_info_{x}")
+                if x==3:
+                    reg_block = await read_regs(58368, 76, f"battery_info_{x}")
                 if reg_block:
                     BManufacturer = ModbusClientMixin.convert_from_registers(reg_block[0:16], ModbusClientMixin.DATATYPE.STRING, word_order="big")
                     BModel = ModbusClientMixin.convert_from_registers(reg_block[16:32], ModbusClientMixin.DATATYPE.STRING, word_order="big")
@@ -451,61 +453,6 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     logger.error(f'Meter labels not initialized for meter {x}; skipping this read.')
                     continue
                 if reg_block:
-                    # print(reg_block)
-                    # reg_block[0] = AC Total current value
-                    # reg_block[1] = AC Phase A current value
-                    # reg_block[2] = AC Phase B current value
-                    # reg_block[3] = AC Phase C current value
-                    # reg_block[4] = AC current scale factor
-                    # reg_block[5] = AC Phase Line (average) to N voltage value
-                    # reg_block[6] = AC Phase A to N voltage value
-                    # reg_block[7] = AC Phase B to N voltage value
-                    # reg_block[8] = AC Phase C to N voltage value
-                    # reg_block[9] = AC Phase Line to Line voltage value
-                    # reg_block[10] = AC Phase A to B voltage value
-                    # reg_block[11] = AC Phase B to C voltage value
-                    # reg_block[12] = AC Phase C to A voltage value
-                    # reg_block[13] = AC voltage scale factor
-                    # reg_block[14] = AC Frequency value
-                    # reg_block[15] = AC Frequency scale factor
-                    # reg_block[16] = Total Real Power
-                    # reg_block[17] = Phase A Real Power
-                    # reg_block[18] = Phase B Real Power
-                    # reg_block[19] = Phase C Real Power
-                    # reg_block[20] = Real Power scale factor
-                    # reg_block[21] = Total Apparent Power
-                    # reg_block[22] = Phase A Apparent Power
-                    # reg_block[23] = Phase B Apparent Power
-                    # reg_block[24] = Phase C Apparent Power
-                    # reg_block[25] = Apparent Power scale factor
-                    # reg_block[26] = Total Reactive Power
-                    # reg_block[27] = Phase A Reactive Power
-                    # reg_block[28] = Phase B Reactive Power
-                    # reg_block[29] = Phase C Reactive Power
-                    # reg_block[30] = Reactive Power scale factor
-                    # reg_block[31] = Average Power Factor
-                    # reg_block[32] = Phase A Power Factor
-                    # reg_block[33] = Phase B Power Factor
-                    # reg_block[34] = Phase C Power Factor
-                    # reg_block[35] = Power Factor scale factor
-                    # reg_block[36] = Total Exported Real Energy
-                    # reg_block[38] = Phase A Exported Real Energy
-                    # reg_block[40] = Phase B Exported Real Energy
-                    # reg_block[42] = Phase C Exported Real Energy
-                    # reg_block[44] = Total Imported Real Energy
-                    # reg_block[46] = Phase A Imported Real Energy
-                    # reg_block[48] = Phase B Imported Real Energy
-                    # reg_block[50] = Phase C Imported Real Energy
-                    # reg_block[52] = Real Energy scale factor
-                    # reg_block[53] = Total Exported Real Energy
-                    # reg_block[55] = Phase A Exported Real Energy
-                    # reg_block[57] = Phase B Exported Real Energy
-                    # reg_block[59] = Phase C Exported Real Energy
-                    # reg_block[61] = Total Imported Real Energy
-                    # reg_block[63] = Phase A Imported Real Energy
-                    # reg_block[65] = Phase B Imported Real Energy
-                    # reg_block[67] = Phase C Imported Real Energy
-                    # reg_block[69] = Real Energy scale factor
                     logger.debug(f'meter reg_block: {str(reg_block)}')
                 
                     # Set the Label to use for the Meter Metrics for Prometheus
@@ -525,7 +472,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     fooName = 'M_SunSpec_Length'
                     dictM[fooName] = fooVal if fooVal < 65535 else 0.0
                     # AC Current scale factor
-                    m_ac_current_sf = ModbusClientMixin.convert_from_registers([reg_block[4]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_ac_current_sf = ModbusClientMixin.convert_from_registers([reg_block[6]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_ac_current_sf = 10 ** m_ac_current_sf
                     # AC Current
                     fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[2]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
@@ -541,130 +488,130 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     fooName = 'M_AC_CurrentC'
                     dictM[fooName] = fooVal * m_ac_current_sf if fooVal < 32768 else 0.0
                     # AC Voltage scale factor
-                    m_ac_voltage_sf = ModbusClientMixin.convert_from_registers([reg_block[13]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_ac_voltage_sf = ModbusClientMixin.convert_from_registers([reg_block[15]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_ac_voltage_sf = 10 ** m_ac_voltage_sf
                     # AC Voltage
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[5]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[7]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageLN'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[6]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[8]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageAN'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[7]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[9]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageBN'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[8]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[10]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageCN'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[9]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[11]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageLL'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[10]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[12]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageAB'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[11]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[13]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageBC'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[12]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[14]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VoltageCA'
                     dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
                     # AC Frequency scale factor
-                    m_ac_freq_sf = ModbusClientMixin.convert_from_registers([reg_block[15]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_ac_freq_sf = ModbusClientMixin.convert_from_registers([reg_block[17]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_ac_freq_sf = 10 ** m_ac_freq_sf
                     # AC Frequency
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[14]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[16]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_Frequency'
                     dictM[fooName] = fooVal * m_ac_freq_sf if fooVal < 32768 else 0.0
                     # AC Real Power scale factor
-                    m_ac_power_sf = ModbusClientMixin.convert_from_registers([reg_block[20]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_ac_power_sf = ModbusClientMixin.convert_from_registers([reg_block[22]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_ac_power_sf = 10 ** m_ac_power_sf
                     # AC Real Power
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[16]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[18]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_Power'
                     dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[17]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[19]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_Power_A'
                     dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[18]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[20]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_Power_B'
                     dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[19]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[21]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_Power_C'
                     dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
                     # AC Apparent Power scale factor
-                    m_ac_va_sf = ModbusClientMixin.convert_from_registers([reg_block[25]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_ac_va_sf = ModbusClientMixin.convert_from_registers([reg_block[27]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_ac_va_sf = 10 ** m_ac_va_sf
                     # AC Apparent Power
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[21]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[23]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VA'
                     dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[22]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[24]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VA_A'
                     dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[23]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[25]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VA_B'
                     dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[24]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[26]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VA_C'
                     dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
                     # AC Reactive Power scale factor
-                    m_ac_var_sf = ModbusClientMixin.convert_from_registers([reg_block[30]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_ac_var_sf = ModbusClientMixin.convert_from_registers([reg_block[32]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_ac_var_sf = 10 ** m_ac_var_sf
                     # AC Reactive Power
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[26]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[28]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VAR'
                     dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[27]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[29]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VAR_A'
                     dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[28]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[30]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VAR_B'
                     dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[29]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[31]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_VAR_C'
                     dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
                     # AC Power Factor scale factor
-                    m_ac_pf_sf = ModbusClientMixin.convert_from_registers([reg_block[35]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_ac_pf_sf = ModbusClientMixin.convert_from_registers([reg_block[37]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_ac_pf_sf = 10 ** m_ac_pf_sf
                     # AC Power Factor
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[31]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[33]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_PF'
                     dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[32]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[34]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_PF_A'
                     dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[33]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[35]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_PF_B'
                     dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[34]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers([reg_block[36]], ModbusClientMixin.DATATYPE.INT16, word_order="big"))
                     fooName = 'M_AC_PF_C'
                     dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
                     # Real Energy scale factor
-                    m_energy_sf = ModbusClientMixin.convert_from_registers([reg_block[52]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
+                    m_energy_sf = ModbusClientMixin.convert_from_registers([reg_block[54]], ModbusClientMixin.DATATYPE.INT16, word_order="big")
                     m_energy_sf = 10 ** m_energy_sf
                     # Accumulated AC Real Energy
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[36:38], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[38:40], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Exported'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[38:40], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[40:42], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Exported_A'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[40:42], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[42:44], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Exported_B'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[42:44], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[44:46], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Exported_C'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[44:46], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[46:48], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Imported'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[46:48], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[48:50], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Imported_A'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[48:50], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[50:52], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Imported_B'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
-                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[50:52], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
+                    fooVal = trunc_float(ModbusClientMixin.convert_from_registers(reg_block[52:54], ModbusClientMixin.DATATYPE.UINT32, word_order="big"))
                     fooName = 'M_Imported_C'
                     dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
                     # Add the ScaleFactor elements
@@ -702,54 +649,9 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     reg_block = await read_regs(57666, 72, f"battery{x}")
                 if x==2:
                     reg_block = await read_regs(57922, 72, f"battery{x}")
+                if x==3:
+                    reg_block = await read_regs(58434, 72, f"battery{x}")
                 if reg_block:
-                    # print(reg_block)
-                    # reg_block[0] = Battery Rated Energy
-                    # reg_block[1] = Battery Max Charge Continues Power
-                    # reg_block[2] = Batter Max Discharge Continues Power
-                    # reg_block[3] = Batter Max Charge Peak Power
-                    # reg_block[4] = Batter Max Discharge Peak Power
-                    # reg_block[5] = Reserved
-                    # reg_block[6] = Reserved
-                    # reg_block[7] = Reserved
-                    # reg_block[8] = Reserved
-                    # reg_block[9] = Reserved
-                    # reg_block[10] = Reserved
-                    # reg_block[11] = Reserved
-                    # reg_block[12] = Reserved
-                    # reg_block[13] = Reserved
-                    # reg_block[14] = Reserved
-                    # reg_block[15] = Reserved
-                    # reg_block[16] = Reserved
-                    # reg_block[17] = Reserved
-                    # reg_block[18] = Reserved
-                    # reg_block[19] = Reserved
-                    # reg_block[20] = Reserved
-                    # reg_block[21] = Batter Average Temperature
-                    # reg_block[22] = Batter Max Temperature
-                    # reg_block[23] = Batter Instantaneous Voltage
-                    # reg_block[24] = Batter Instantaneous Current
-                    # reg_block[25] = Batter Instantaneous Power
-                    # reg_block[26] = Batter Lifetime Export Energy Counter
-                    # reg_block[27] = Batter Lifetime Export Energy Counter
-                    # reg_block[28] = Batter Lifetime Import Energy Counter
-                    # reg_block[29] = Batter Lifetime Import Energy Counter
-                    # reg_block[30] = Batter Max Energy
-                    # reg_block[31] = Batter Available Energy
-                    # reg_block[32] = Batter State of Health
-                    # reg_block[33] = Batter State of Energy
-                    # reg_block[34] = Batter Status
-                    # reg_block[35] = Batter Status Internal
-                    # ... ignore the rest
-                    # reg_block[36] = Batter Events Log
-                    # reg_block[38] = Batter Events Log
-                    # reg_block[40] = Batter Events Log
-                    # reg_block[42] = Batter Events Log
-                    # reg_block[44] = Batter Events Log Internal
-                    # reg_block[46] = Batter Events Log Internal
-                    # reg_block[48] = Batter Events Log Internal
-                    # reg_block[50] = Batter Events Log Internal
-                    # reg_block[52] = Reserved....
                     logger.debug(f'meter reg_block: {str(reg_block)}')
                 
                     # Set the Label to use for the Battery Metrics for Prometheus
@@ -761,75 +663,75 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     }
                     
                     # Battery Rated Energy
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[0:2], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[0:2], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Rated_Energy'
                     dictB[fooName] = fooVal
                     # Battery Max Charge Continues Power
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[2:4], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[2:4], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Max_Charge_Continues_Power'
                     dictB[fooName] = fooVal
                     # Battery Max Discharge Continues Power
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[4:6], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[4:6], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Max_Discharge_Continues_Power'
                     dictB[fooName] = fooVal
                     # Battery Max Charge Peak Power
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[6:8], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[6:8], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Max_Charge_Peak_Power'
                     dictB[fooName] = fooVal
                     # Battery Max Discharge Peak Power
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[8:10], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[8:10], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Max_Discharge_Peak_Power'
                     dictB[fooName] = fooVal
                     # Battery Average Temperature
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[21:23], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[42:44], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Average_Temperature'
                     dictB[fooName] = fooVal
                     # Battery Max Temperature
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[23:25], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[44:46], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Max_Temperature'
                     dictB[fooName] = fooVal
                     # Battery Instantaneous Voltage
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[25:27], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[46:48], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Instantaneous_Voltage'
                     dictB[fooName] = fooVal
                     # Battery Instantaneous Current
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[27:29], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[48:50], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Instantaneous_Current'
                     dictB[fooName] = fooVal
                     # Battery Instantaneous Power
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[29:31], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[50:52], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Instantaneous_Power'
                     dictB[fooName] = fooVal
                     # Battery Lifetime Export Energy Counter
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[31:35], ModbusClientMixin.DATATYPE.UINT64, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[52:56], ModbusClientMixin.DATATYPE.UINT64, word_order="little")
                     fooName = 'B_Lifetime_Export_Energy_Counter'
                     dictB[fooName] = fooVal
                     # Battery Lifetime Import Energy Counter
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[35:39], ModbusClientMixin.DATATYPE.UINT64, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[56:60], ModbusClientMixin.DATATYPE.UINT64, word_order="little")
                     fooName = 'B_Lifetime_Import_Energy_Counter'
                     dictB[fooName] = fooVal
                     # Battery Max Energy
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[39:41], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[60:62], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Max_Energy'
                     dictB[fooName] = fooVal
                     # Battery Available Energy
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[41:43], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[62:64], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_Available_Energy'
                     dictB[fooName] = fooVal
                     # Battery State of Health
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[43:45], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[64:66], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_State_of_Health'
                     dictB[fooName] = fooVal
                     # Battery State of Energy
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[45:47], ModbusClientMixin.DATATYPE.FLOAT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[66:68], ModbusClientMixin.DATATYPE.FLOAT32, word_order="little")
                     fooName = 'B_State_of_Energy'
                     dictB[fooName] = fooVal
                     # Battery Status
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[47:49], ModbusClientMixin.DATATYPE.UINT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[68:70], ModbusClientMixin.DATATYPE.UINT32, word_order="little")
                     fooName = 'B_Status'
                     dictB[fooName] = fooVal
                     # Battery Status Internal
-                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[49:51], ModbusClientMixin.DATATYPE.UINT32, word_order="big")
+                    fooVal = ModbusClientMixin.convert_from_registers(reg_block[70:72], ModbusClientMixin.DATATYPE.UINT32, word_order="little")
                     fooName = 'B_Status_Internal'
                     dictB[fooName] = fooVal
                     publish_metrics(dictB, 'battery', metriclabel, x, legacysupport)
