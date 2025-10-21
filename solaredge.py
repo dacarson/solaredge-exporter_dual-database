@@ -3,12 +3,11 @@ import argparse
 import datetime
 import logging
 
-from aiohttp import ClientConnectionError
-from pyModbusTCP.client import ModbusClient
-from pymodbus.constants import Endian
-from pymodbus.payload import BinaryPayloadDecoder
+from pyModbusTCP.client.mixin import ModbusClient
+from pymodbus.client import ModbusClientMixin
 import asyncio
-from aioinflux import InfluxDBClient, InfluxDBWriteError
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
 from prometheus_client import Gauge
 from prometheus_client import start_http_server
 from prometheus_client import Counter, Histogram
@@ -81,8 +80,20 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
         return float('%.2f' % floatval)
 
     try:
-        solar_client = InfluxDBClient(host=dbhost, port=dbport, username=uname, password=passw, db=dbname)
-        # await solar_client.create_database(db=dbname)
+        url = f"http://{dbhost}:{dbport}"
+        solar_client = InfluxDBClient(url=url, org="-", token=f"{uname}:{passw}")
+        write_api = solar_client.write_api(write_options=SYNCHRONOUS)
+        bucket = dbname
+
+        def write_point(datapoint):
+            p = Point(datapoint["measurement"])
+            for k, v in datapoint.get("fields", {}).items():
+                p = p.field(k, v)
+            for k, v in datapoint.get("tags", {}).items():
+                p = p.tag(k, v)
+            if "time" in datapoint:
+                p = p.time(datapoint["time"])
+            write_api.write(bucket=bucket, record=p)
     except ClientConnectionError as e:
         logger.error(f'Error during connection to InfluxDb {dbhost}: {e}')
         return
@@ -145,13 +156,12 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
         reg_block = {}
         reg_block = await read_regs(40004, 65, "inv_info")
         if reg_block:
-            decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
-            InvManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
-            InvModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
-            Invfoo = decoder.decode_string(16).decode('UTF-8')
-            InvVersion = decoder.decode_string(16).decode('UTF-8') #decoder.decode_bits()
-            InvSerialNumber = decoder.decode_string(32).decode('UTF-8')
-            InvDeviceAddress = decoder.decode_16bit_uint()
+            InvManufacturer = client.convert_from_registers(reg_block[0:16], data_type="string", byteorder=">", wordorder=">")
+            InvModel = client.convert_from_registers(reg_block[16:32], data_type="string", byteorder=">", wordorder=">")
+            Invfoo = client.convert_from_registers(reg_block[32:40], data_type="string", byteorder=">", wordorder=">")
+            InvVersion = client.convert_from_registers(reg_block[40:48], data_type="string", byteorder=">", wordorder=">")
+            InvSerialNumber = client.convert_from_registers(reg_block[48:64], data_type="string", byteorder=">", wordorder=">")
+            InvDeviceAddress = client.convert_from_registers([reg_block[64]], data_type="uint16", byteorder=">", wordorder=">")
 
             print('*' * 60)
             print('* Inverter Info')
@@ -179,13 +189,12 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                 if x==3:
                     reg_block = await read_regs(40471, 65, f"meter_info_{x}")
                 if reg_block:
-                    decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
-                    MManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
-                    MModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
-                    MOption = decoder.decode_string(16).decode('UTF-8')
-                    MVersion = decoder.decode_string(16).decode('UTF-8') #decoder.decode_bits()
-                    MSerialNumber = decoder.decode_string(32).decode('UTF-8')
-                    MDeviceAddress = decoder.decode_16bit_uint()
+                    MManufacturer = client.convert_from_registers(reg_block[0:16], data_type="string", byteorder=">", wordorder=">")
+                    MModel = client.convert_from_registers(reg_block[16:32], data_type="string", byteorder=">", wordorder=">")
+                    MOption = client.convert_from_registers(reg_block[32:40], data_type="string", byteorder=">", wordorder=">")
+                    MVersion = client.convert_from_registers(reg_block[40:48], data_type="string", byteorder=">", wordorder=">")
+                    MSerialNumber = client.convert_from_registers(reg_block[48:64], data_type="string", byteorder=">", wordorder=">")
+                    MDeviceAddress = client.convert_from_registers([reg_block[64]], data_type="uint16", byteorder=">", wordorder=">")
                     fooLabel = MManufacturer.split('\x00')[0] + '(' + MSerialNumber.split('\x00')[0] + ')'
                     dictMeterLabel.append(fooLabel)
                     print('*' * 60)
@@ -217,19 +226,17 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                 if x==2:
                     reg_block = await read_regs(57856, 76, f"battery_info_{x}")
                 if reg_block:
-                    decoder = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
-                    BManufacturer = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_float(),
-                    BModel = decoder.decode_string(32).decode('UTF-8') #decoder.decode_32bit_int(),
-                    # MOption = decoder.decode_string(16).decode('UTF-8')
-                    BVersion = decoder.decode_string(32).decode('UTF-8') #decoder.decode_bits()
-                    BSerialNumber = decoder.decode_string(32).decode('UTF-8')
-                    BDeviceAddress = decoder.decode_16bit_uint()
-                    decoder.skip_bytes(2)
-                    BRatedEnergy = decoder.decode_32bit_float()
-                    BMaxChargePower = decoder.decode_32bit_float()
-                    BMaxDischargePower = decoder.decode_32bit_float()
-                    BMaxChargePeakPower = decoder.decode_32bit_float()
-                    BMaxDischargePeakPower = decoder.decode_32bit_float()
+                    BManufacturer = client.convert_from_registers(reg_block[0:16], data_type="string", byteorder=">", wordorder=">")
+                    BModel = client.convert_from_registers(reg_block[16:32], data_type="string", byteorder=">", wordorder=">")
+                    BVersion = client.convert_from_registers(reg_block[32:48], data_type="string", byteorder=">", wordorder=">")
+                    BSerialNumber = client.convert_from_registers(reg_block[48:64], data_type="string", byteorder=">", wordorder=">")
+                    BDeviceAddress = client.convert_from_registers([reg_block[64]], data_type="uint16", byteorder=">", wordorder=">")
+                    # skip reg_block[65] (2 bytes)
+                    BRatedEnergy = client.convert_from_registers(reg_block[66:68], data_type="float32", byteorder=">", wordorder=">")
+                    BMaxChargePower = client.convert_from_registers(reg_block[68:70], data_type="float32", byteorder=">", wordorder=">")
+                    BMaxDischargePower = client.convert_from_registers(reg_block[70:72], data_type="float32", byteorder=">", wordorder=">")
+                    BMaxChargePeakPower = client.convert_from_registers(reg_block[72:74], data_type="float32", byteorder=">", wordorder=">")
+                    BMaxDischargePeakPower = client.convert_from_registers(reg_block[74:76], data_type="float32", byteorder=">", wordorder=">")
                     fooLabel = BManufacturer.split('\x00')[0] + '(' + BSerialNumber.split('\x00')[0] + ')'
                     dictBattery.append(fooLabel)
                     print('*' * 60)
@@ -304,249 +311,130 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                 }
                 logger.debug(f'inverter reg_block: {str(reg_block)}')
 
-                data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
-
                 # SunSpec DID
-                # Register 40069
-                fooVal = trunc_float(data.decode_16bit_uint())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[0]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'SunSpec_DID'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal if fooVal < 65535 else 0.0
                 # SunSpec Length
-                # Register 40070
-                fooVal = trunc_float(data.decode_16bit_uint())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[1]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'SunSpec_Length'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal
-                else:
-                    dictInv[fooName] = 0.0
-                
+                dictInv[fooName] = fooVal if fooVal < 65535 else 0.0
+                # AC Current scale factor
+                ac_current_sf = client.convert_from_registers([reg_block[6]], data_type="int16", byteorder=">", wordorder=">")
+                ac_current_sf = 10 ** ac_current_sf
                 # AC Current
-                data.skip_bytes(8)
-                # Register 40075
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-10)
-                # Register 40071-40074
-                fooVal = trunc_float(data.decode_16bit_uint())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[2]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_Current'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_current_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[3]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_CurrentA'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_current_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[4]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_CurrentB'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_current_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[5]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_CurrentC'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal * ac_current_sf if fooVal < 65535 else 0.0
+                # AC Voltage scale factor
+                ac_voltage_sf = client.convert_from_registers([reg_block[13]], data_type="int16", byteorder=">", wordorder=">")
+                ac_voltage_sf = 10 ** ac_voltage_sf
                 # AC Voltage
-                data.skip_bytes(14)
-                # Register 40082
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-14)
-                # Register 40077
-                fooVal = trunc_float(data.decode_16bit_uint())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[7]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VoltageAB'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_voltage_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[8]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VoltageBC'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_voltage_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[9]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VoltageCA'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_voltage_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[10]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VoltageAN'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_voltage_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[11]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VoltageBN'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_voltage_sf if fooVal < 65535 else 0.0
+                fooVal = trunc_float(client.convert_from_registers([reg_block[12]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VoltageCN'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal * ac_voltage_sf if fooVal < 65535 else 0.0
+                # AC Power scale factor
+                ac_power_sf = client.convert_from_registers([reg_block[15]], data_type="int16", byteorder=">", wordorder=">")
+                ac_power_sf = 10 ** ac_power_sf
                 # AC Power
-                data.skip_bytes(4)
-                # Register 40084
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40083
-                fooVal = trunc_float(data.decode_16bit_int())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[14]], data_type="int16", byteorder=">", wordorder=">"))
                 fooName = 'AC_Power'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-
-               # AC Frequency
-                data.skip_bytes(4)
-                # Register 40086
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40085
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal * ac_power_sf if fooVal < 65535 else 0.0
+                # AC Frequency scale factor
+                ac_freq_sf = client.convert_from_registers([reg_block[17]], data_type="int16", byteorder=">", wordorder=">")
+                ac_freq_sf = 10 ** ac_freq_sf
+                # AC Frequency
+                fooVal = trunc_float(client.convert_from_registers([reg_block[16]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'AC_Frequency'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal * ac_freq_sf if fooVal < 65535 else 0.0
+                # AC Apparent Power scale factor
+                ac_va_sf = client.convert_from_registers([reg_block[19]], data_type="int16", byteorder=">", wordorder=">")
+                ac_va_sf = 10 ** ac_va_sf
                 # AC Apparent Power
-                data.skip_bytes(4)
-                # Register 40088
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40087
-                fooVal = trunc_float(data.decode_16bit_int())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[18]], data_type="int16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VA'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                
+                dictInv[fooName] = fooVal * ac_va_sf if fooVal < 65535 else 0.0
+                # AC Reactive Power scale factor
+                ac_var_sf = client.convert_from_registers([reg_block[21]], data_type="int16", byteorder=">", wordorder=">")
+                ac_var_sf = 10 ** ac_var_sf
                 # AC Reactive Power
-                data.skip_bytes(4)
-                # Register 40090
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40089
-                fooVal = trunc_float(data.decode_16bit_int())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[20]], data_type="int16", byteorder=">", wordorder=">"))
                 fooName = 'AC_VAR'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                
+                dictInv[fooName] = fooVal * ac_var_sf if fooVal < 65535 else 0.0
+                # AC Power Factor scale factor
+                ac_pf_sf = client.convert_from_registers([reg_block[23]], data_type="int16", byteorder=">", wordorder=">")
+                ac_pf_sf = 10 ** ac_pf_sf
                 # AC Power Factor
-                data.skip_bytes(4)
-                # Register 40092
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40091
-                fooVal = trunc_float(data.decode_16bit_int())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[22]], data_type="int16", byteorder=">", wordorder=">"))
                 fooName = 'AC_PF'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal * ac_pf_sf if fooVal < 65535 else 0.0
+                # AC Lifetime Energy scale factor
+                ac_wh_sf = client.convert_from_registers([reg_block[26]], data_type="uint16", byteorder=">", wordorder=">")
+                ac_wh_sf = 10 ** ac_wh_sf
                 # AC Lifetime Energy Production
-                data.skip_bytes(6)
-                # Register 40095
-                scalefactor = 10**data.decode_16bit_uint()
-                data.skip_bytes(-6)
-                # Register 40093
-                fooVal = trunc_float(data.decode_32bit_uint())
+                fooVal = trunc_float(client.convert_from_registers(reg_block[24:26], data_type="uint32", byteorder=">", wordorder=">"))
                 fooName = 'AC_Energy_WH'
-                if fooVal < 4294967295:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                
+                dictInv[fooName] = fooVal * ac_wh_sf if fooVal < 4294967295 else 0.0
+                # DC Current scale factor
+                dc_current_sf = client.convert_from_registers([reg_block[28]], data_type="int16", byteorder=">", wordorder=">")
+                dc_current_sf = 10 ** dc_current_sf
                 # DC Current
-                data.skip_bytes(4)
-                # Register 40097
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40096
-                fooVal = trunc_float(data.decode_16bit_uint())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[27]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'DC_Current'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal * dc_current_sf if fooVal < 65535 else 0.0
+                # DC Voltage scale factor
+                dc_voltage_sf = client.convert_from_registers([reg_block[30]], data_type="int16", byteorder=">", wordorder=">")
+                dc_voltage_sf = 10 ** dc_voltage_sf
                 # DC Voltage
-                data.skip_bytes(4)
-                # Register 40099
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40098
-                fooVal = trunc_float(data.decode_16bit_uint())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[29]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'DC_Voltage'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal * dc_voltage_sf if fooVal < 65535 else 0.0
+                # DC Power scale factor
+                dc_power_sf = client.convert_from_registers([reg_block[32]], data_type="int16", byteorder=">", wordorder=">")
+                dc_power_sf = 10 ** dc_power_sf
                 # DC Power
-                data.skip_bytes(4)
-                # Register 40101
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-4)
-                # Register 40100
-                fooVal = trunc_float(data.decode_16bit_int())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[31]], data_type="int16", byteorder=">", wordorder=">"))
                 fooName = 'DC_Power'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                
-                # Inverter Temp
-                data.skip_bytes(10)
-                # Register 40106
-                scalefactor = 10**data.decode_16bit_int()
-                data.skip_bytes(-8)
-                # Register 40103
-                fooVal = trunc_float(data.decode_16bit_int())
+                dictInv[fooName] = fooVal * dc_power_sf if fooVal < 65535 else 0.0
+                # Inverter temp scale factor
+                temp_sf = client.convert_from_registers([reg_block[37]], data_type="int16", byteorder=">", wordorder=">")
+                temp_sf = 10 ** temp_sf
+                # Inverter temp
+                fooVal = trunc_float(client.convert_from_registers([reg_block[34]], data_type="int16", byteorder=">", wordorder=">"))
                 fooName = 'Temp_Sink'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal * scalefactor
-                else:
-                    dictInv[fooName] = 0.0
-                
+                dictInv[fooName] = fooVal * temp_sf if fooVal < 65535 else 0.0
                 # Inverter Operating State
-                data.skip_bytes(6)
-                # Register 40107
-                fooVal = trunc_float(data.decode_16bit_uint())
+                fooVal = trunc_float(client.convert_from_registers([reg_block[38]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'Status'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal
-                else:
-                    dictInv[fooName] = 0.0
-                
-                # Inverter Operating Status Code
-                # Register 40108
-                fooVal = trunc_float(data.decode_16bit_uint())
+                dictInv[fooName] = fooVal if fooVal < 65535 else 0.0
+                # Inverter Status Code
+                fooVal = trunc_float(client.convert_from_registers([reg_block[39]], data_type="uint16", byteorder=">", wordorder=">"))
                 fooName = 'Status_Vendor'
-                if fooVal < 65535:
-                    dictInv[fooName] = fooVal
-                else:
-                    dictInv[fooName] = 0.0
-
+                dictInv[fooName] = fooVal if fooVal < 65535 else 0.0
                 # Adding the ScaleFactor elements
                 dictInv['AC_Current_SF'] = 0.0
                 dictInv['AC_Voltage_SF'] = 0.0
@@ -560,18 +448,14 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                 dictInv['DC_Voltage_SF'] = 0.0
                 dictInv['DC_Power_SF'] = 0.0
                 dictInv['Temp_SF'] = 0.0
-                
                 logger.debug(f'Inverter')
                 for j, k in dictInv.items():
                     logger.debug(f'  {j}: {k}')
-
                 publish_metrics(dictInv, 'inverter', '')
                 logger.debug('Done publishing inverter metrics...')
-                             
                 datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
-
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
-                await solar_client.write(datapoint)
+                write_point(datapoint)
                 logger.info('Wrote Inverter datapoint to Influx.')
 
             else:
@@ -660,316 +544,157 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                         'fields': {}
                     }
                     
-                    data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.BIG)
-
                     # SunSpec DID
-                    # Register 40188
-                    fooVal = trunc_float(data.decode_16bit_uint())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[0]], data_type="uint16", byteorder=">", wordorder=">"))
                     fooName = 'M_SunSpec_DID'
-                    if fooVal < 65535:
-                        dictM[fooName] = fooVal
-                    else:
-                        dictM[fooName] = 0.0
-
+                    dictM[fooName] = fooVal if fooVal < 65535 else 0.0
                     # SunSpec Length
-                    # Register 40070
-                    fooVal = trunc_float(data.decode_16bit_uint())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[1]], data_type="uint16", byteorder=">", wordorder=">"))
                     fooName = 'M_SunSpec_Length'
-                    if fooVal < 65535:
-                        dictM[fooName] = fooVal
-                    else:
-                        dictM[fooName] = 0.0
-
+                    dictM[fooName] = fooVal if fooVal < 65535 else 0.0
+                    # AC Current scale factor
+                    m_ac_current_sf = client.convert_from_registers([reg_block[4]], data_type="int16", byteorder=">", wordorder=">")
+                    m_ac_current_sf = 10 ** m_ac_current_sf
                     # AC Current
-                    data.skip_bytes(8)
-                    # Register 40194
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-10)
-                    # Register 40190-40193
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[2]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_Current'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_current_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[3]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_CurrentA'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_current_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[4]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_CurrentB'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_current_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[5]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_CurrentC'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-
-                   # AC Voltage
-                    data.skip_bytes(18)
-                    # Register 40203
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-18)
-                    # Register 40195-40202
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_current_sf if fooVal < 32768 else 0.0
+                    # AC Voltage scale factor
+                    m_ac_voltage_sf = client.convert_from_registers([reg_block[13]], data_type="int16", byteorder=">", wordorder=">")
+                    m_ac_voltage_sf = 10 ** m_ac_voltage_sf
+                    # AC Voltage
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[5]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageLN'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[6]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageAN'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[7]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageBN'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[8]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageCN'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[9]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageLL'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[10]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageAB'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[11]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageBC'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[12]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VoltageCA'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-
+                    dictM[fooName] = fooVal * m_ac_voltage_sf if fooVal < 32768 else 0.0
+                    # AC Frequency scale factor
+                    m_ac_freq_sf = client.convert_from_registers([reg_block[15]], data_type="int16", byteorder=">", wordorder=">")
+                    m_ac_freq_sf = 10 ** m_ac_freq_sf
                     # AC Frequency
-                    data.skip_bytes(4)
-                    # Register 40205
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-4)
-                    # Register 40204
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[14]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_Frequency'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    
+                    dictM[fooName] = fooVal * m_ac_freq_sf if fooVal < 32768 else 0.0
+                    # AC Real Power scale factor
+                    m_ac_power_sf = client.convert_from_registers([reg_block[20]], data_type="int16", byteorder=">", wordorder=">")
+                    m_ac_power_sf = 10 ** m_ac_power_sf
                     # AC Real Power
-                    data.skip_bytes(10)
-                    # Register 40210
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-10)
-                    # Register 40206-40209
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[16]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_Power'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[17]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_Power_A'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[18]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_Power_B'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[19]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_Power_C'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    
+                    dictM[fooName] = fooVal * m_ac_power_sf if fooVal < 32768 else 0.0
+                    # AC Apparent Power scale factor
+                    m_ac_va_sf = client.convert_from_registers([reg_block[25]], data_type="int16", byteorder=">", wordorder=">")
+                    m_ac_va_sf = 10 ** m_ac_va_sf
                     # AC Apparent Power
-                    data.skip_bytes(10)
-                    # Register 40215
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-10)
-                    # Register 40211-40214
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[21]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VA'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[22]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VA_A'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[23]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VA_B'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[24]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VA_C'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-
+                    dictM[fooName] = fooVal * m_ac_va_sf if fooVal < 32768 else 0.0
+                    # AC Reactive Power scale factor
+                    m_ac_var_sf = client.convert_from_registers([reg_block[30]], data_type="int16", byteorder=">", wordorder=">")
+                    m_ac_var_sf = 10 ** m_ac_var_sf
                     # AC Reactive Power
-                    data.skip_bytes(10)
-                    # Register 40220
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-10)
-                    # Register 40216-40219
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[26]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VAR'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[27]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VAR_A'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[28]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VAR_B'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[29]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_VAR_C'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-
+                    dictM[fooName] = fooVal * m_ac_var_sf if fooVal < 32768 else 0.0
+                    # AC Power Factor scale factor
+                    m_ac_pf_sf = client.convert_from_registers([reg_block[35]], data_type="int16", byteorder=">", wordorder=">")
+                    m_ac_pf_sf = 10 ** m_ac_pf_sf
                     # AC Power Factor
-                    data.skip_bytes(10)
-                    # Register 40225
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-10)
-                    # Register 40221-40224
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[31]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_PF'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[32]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_PF_A'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[33]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_PF_B'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_16bit_int())
+                    dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers([reg_block[34]], data_type="int16", byteorder=">", wordorder=">"))
                     fooName = 'M_AC_PF_C'
-                    if fooVal < 32768:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-
+                    dictM[fooName] = fooVal * m_ac_pf_sf if fooVal < 32768 else 0.0
+                    # Real Energy scale factor
+                    m_energy_sf = client.convert_from_registers([reg_block[52]], data_type="int16", byteorder=">", wordorder=">")
+                    m_energy_sf = 10 ** m_energy_sf
                     # Accumulated AC Real Energy
-                    data.skip_bytes(34)
-                    # Register 40242
-                    scalefactor = 10**data.decode_16bit_int()
-                    data.skip_bytes(-34)
-                    # Register 40226-40240
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[36:38], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Exported'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[38:40], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Exported_A'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[40:42], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Exported_B'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[42:44], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Exported_C'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[44:46], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Imported'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[46:48], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Imported_A'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[48:50], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Imported_B'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                    fooVal = trunc_float(data.decode_32bit_uint())
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
+                    fooVal = trunc_float(client.convert_from_registers(reg_block[50:52], data_type="uint32", byteorder=">", wordorder=">"))
                     fooName = 'M_Imported_C'
-                    if fooVal < 4294967295:
-                        dictM[fooName] = fooVal * scalefactor
-                    else:
-                        dictM[fooName] = 0.0
-                   
-                    # Accumulated AC Apparent Energy
-                    #logger.debug(f'Apparent Energy SF: {str(np.int16(reg_block[69]))}')
-                    #scalefactor = np.float_power(10,np.int16(reg_block[69]))
-                    #datapoint['fields']['M_Exported_VA'] = trunc_float(((reg_block[53] << 16) + reg_block[54]) * scalefactor)
-                    #datapoint['fields']['M_Exported_VA_A'] = trunc_float(((reg_block[55] << 16) + reg_block[56]) * scalefactor)
-                    #datapoint['fields']['M_Exported_VA_B'] = trunc_float(((reg_block[57] << 16) + reg_block[58]) * scalefactor)
-                    #datapoint['fields']['M_Exported_VA_C'] = trunc_float(((reg_block[59] << 16) + reg_block[60]) * scalefactor)
-                    #datapoint['fields']['M_Imported_VA'] = trunc_float(((reg_block[61] << 16) + reg_block[62]) * scalefactor)
-                    #datapoint['fields']['M_Imported_VA_A'] = trunc_float(((reg_block[63] << 16) + reg_block[64]) * scalefactor)
-                    #datapoint['fields']['M_Imported_VA_B'] = trunc_float(((reg_block[65] << 16) + reg_block[66]) * scalefactor)
-                    #datapoint['fields']['M_Imported_VA_C'] = trunc_float(((reg_block[67] << 16) + reg_block[68]) * scalefactor)
-
+                    dictM[fooName] = fooVal * m_energy_sf if fooVal < 4294967295 else 0.0
                     # Add the ScaleFactor elements
                     dictM['M_AC_Current_SF'] = 0.0
                     dictM['M_AC_Voltage_SF'] = 0.0
@@ -979,17 +704,13 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     dictM['M_AC_VAR_SF'] = 0.0
                     dictM['M_AC_PF_SF'] = 0.0
                     dictM['M_Energy_W_SF'] = 0.0
-
                     publish_metrics(dictM, 'meter', metriclabel, x, legacysupport)
-
                     datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
-
                     logger.debug(f'Meter: {metriclabel}')
                     for j, k in dictM.items():
                         logger.debug(f'  {j}: {k}')
-                        
                     logger.debug(f'Writing to Influx: {str(datapoint)}')
-                    await solar_client.write(datapoint)
+                    write_point(datapoint)
                     logger.info(f'Wrote Meter {x} ({metriclabel}) datapoint to Influx.')
 
                 else:
@@ -1064,134 +785,91 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                         'fields': {}
                     }
                     
-                    data = BinaryPayloadDecoder.fromRegisters(reg_block, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
-
                     # Battery Rated Energy
-                    # Register 57666
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[0:2], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Rated_Energy'
                     dictB[fooName] = fooVal
-
                     # Battery Max Charge Continues Power
-                    # Register 57668
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[2:4], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Max_Charge_Continues_Power'
                     dictB[fooName] = fooVal
-
                     # Battery Max Discharge Continues Power
-                    # Register 57670
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[4:6], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Max_Discharge_Continues_Power'
                     dictB[fooName] = fooVal
-
                     # Battery Max Charge Peak Power
-                    # Register 57672
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[6:8], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Max_Charge_Peak_Power'
                     dictB[fooName] = fooVal
-
                     # Battery Max Discharge Peak Power
-                    # Register 57674
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[8:10], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Max_Discharge_Peak_Power'
                     dictB[fooName] = fooVal
-
-                    data.skip_bytes(64)
                     # Battery Average Temperature
-                    # Register 57708
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[21:23], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Average_Temperature'
                     dictB[fooName] = fooVal
-
                     # Battery Max Temperature
-                    # Register 57710
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[23:25], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Max_Temperature'
                     dictB[fooName] = fooVal
-
                     # Battery Instantaneous Voltage
-                    # Register 57712
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[25:27], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Instantaneous_Voltage'
                     dictB[fooName] = fooVal
-
                     # Battery Instantaneous Current
-                    # Register 57714
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[27:29], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Instantaneous_Current'
                     dictB[fooName] = fooVal
-
                     # Battery Instantaneous Power
-                    # Register 57716
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[29:31], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Instantaneous_Power'
                     dictB[fooName] = fooVal
-
                     # Battery Lifetime Export Energy Counter
-                    # Register 57718
-                    fooVal = data.decode_64bit_uint()
+                    fooVal = client.convert_from_registers(reg_block[31:35], data_type="uint64", byteorder=">", wordorder=">")
                     fooName = 'B_Lifetime_Export_Energy_Counter'
                     dictB[fooName] = fooVal
-
                     # Battery Lifetime Import Energy Counter
-                    # Register 57722
-                    fooVal = data.decode_64bit_uint()
+                    fooVal = client.convert_from_registers(reg_block[35:39], data_type="uint64", byteorder=">", wordorder=">")
                     fooName = 'B_Lifetime_Import_Energy_Counter'
                     dictB[fooName] = fooVal
-
                     # Battery Max Energy
-                    # Register 57726
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[39:41], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Max_Energy'
                     dictB[fooName] = fooVal
-
                     # Battery Available Energy
-                    # Register 57728
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[41:43], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_Available_Energy'
                     dictB[fooName] = fooVal
-
                     # Battery State of Health
-                    # Register 57730
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[43:45], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_State_of_Health'
                     dictB[fooName] = fooVal
-
                     # Battery State of Energy
-                    # Register 57732
-                    fooVal = data.decode_32bit_float()
+                    fooVal = client.convert_from_registers(reg_block[45:47], data_type="float32", byteorder=">", wordorder=">")
                     fooName = 'B_State_of_Energy'
                     dictB[fooName] = fooVal
-
                     # Battery Status
-                    # Register 57734
-                    fooVal = data.decode_32bit_uint()
+                    fooVal = client.convert_from_registers(reg_block[47:49], data_type="uint32", byteorder=">", wordorder=">")
                     fooName = 'B_Status'
                     dictB[fooName] = fooVal
-
                     # Battery Status Internal
-                    # Register 57736
-                    fooVal = data.decode_32bit_uint()
+                    fooVal = client.convert_from_registers(reg_block[49:51], data_type="uint32", byteorder=">", wordorder=">")
                     fooName = 'B_Status_Internal'
                     dictB[fooName] = fooVal
-
                     publish_metrics(dictB, 'battery', metriclabel, x, legacysupport)
-
                     datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
-
                     logger.debug(f'Battery: {metriclabel}')
                     for j, k in dictB.items():
                         logger.debug(f'  {j}: {k}')
-                        
                     logger.debug(f'Writing to Influx: {str(datapoint)}')
-                    await solar_client.write(datapoint)
+                    write_point(datapoint)
                     logger.info(f'Wrote Battery {x} ({metriclabel}) datapoint to Influx.')
 
                 else:
                     continue
            
-        except InfluxDBWriteError as e:
-            logger.error(f'Failed to write to InfluxDb: {e}')
+        # InfluxDBWriteError no longer exists; remove this except block
         except IOError as e:
             logger.error(f'I/O exception during operation: {e}')
         except Exception as e:
