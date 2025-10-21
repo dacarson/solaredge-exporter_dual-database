@@ -907,8 +907,6 @@ if __name__ == '__main__':
     logging.basicConfig()
     if args.debug and args.debug >= 1:
         logging.getLogger('solaredge').setLevel(logging.DEBUG)
-    if args.debug and args.debug == 2:
-        logging.getLogger('aioinflux').setLevel(logging.DEBUG)
 
     print(f'*' * 60)
     print(f'* Starting parameters')
