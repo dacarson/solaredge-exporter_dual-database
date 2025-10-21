@@ -453,7 +453,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     logger.debug(f'  {j}: {k}')
                 publish_metrics(dictInv, 'inverter', '')
                 logger.debug('Done publishing inverter metrics...')
-                datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
+                datapoint['time'] = str(datetime.datetime.now(datetime.UTC).isoformat())
                 logger.debug(f'Writing to Influx: {str(datapoint)}')
                 write_point(datapoint)
                 logger.info('Wrote Inverter datapoint to Influx.')
@@ -705,7 +705,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     dictM['M_AC_PF_SF'] = 0.0
                     dictM['M_Energy_W_SF'] = 0.0
                     publish_metrics(dictM, 'meter', metriclabel, x, legacysupport)
-                    datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
+                    datapoint['time'] = str(datetime.datetime.now(datetime.UTC).isoformat())
                     logger.debug(f'Meter: {metriclabel}')
                     for j, k in dictM.items():
                         logger.debug(f'  {j}: {k}')
@@ -858,7 +858,7 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
                     fooName = 'B_Status_Internal'
                     dictB[fooName] = fooVal
                     publish_metrics(dictB, 'battery', metriclabel, x, legacysupport)
-                    datapoint['time'] = str(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat())
+                    datapoint['time'] = str(datetime.datetime.now(datetime.UTC).isoformat())
                     logger.debug(f'Battery: {metriclabel}')
                     for j, k in dictB.items():
                         logger.debug(f'  {j}: {k}')
