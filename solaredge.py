@@ -98,27 +98,44 @@ async def write_to_influx(dbhost, dbport, mbmeters, mbbatteries, period, dbname,
         logger.error(f'Error during connection to InfluxDb {dbhost}: {e}')
         return
     logger.info('Database opened and initialized')
-    
-    # Connect to the solaredge inverter
-    client = ModbusTcpClient(args.inverter_ip, port=args.inverter_port, timeout=10.0)
-    client.connect()
 
     async def read_regs(addr: int, count: int, section: str):
-        """Read holding registers with labeled metrics and differentiated error handling."""
-        # Measure request latency for this section
-        with modbus_req_latency_sec.labels(section=section).time():
-            rb = client.read_holding_registers(addr, count=count, device_id=args.unitid)
-        if rb.isError():
-            logger.error(f'Modbus error in section {section}: {rb}')
-            modbus_send_errors.labels(section=section).inc()
+        """Read holding registers with reconnect and error handling."""
+            # Connect to the solaredge inverter
+        client = ModbusTcpClient(args.inverter_ip, port=args.inverter_port, timeout=10.0)
+        client.connect()
+        try:
+            # Measure request latency for this section
+            with modbus_req_latency_sec.labels(section=section).time():
+                rb = client.read_holding_registers(addr, count=count, device_id=args.unitid)
+
+            if rb.isError():
+                logger.error(f'Modbus error in section {section}: {rb}')
+                modbus_send_errors.labels(section=section).inc()
+                try:
+                    client.close()
+                except Exception:
+                    pass
+                await asyncio.sleep(3)
+                if not client.connect():
+                    logger.warning(f'Failed to reconnect to inverter after Modbus error in {section}')
+                return None
+                
+            client.close()
+            return rb.registers
+
+        except Exception as e:
+            logger.error(f'Modbus I/O exception in section {section}: {e}')
+            modbus_recv_errors.labels(section=section).inc()
             try:
                 client.close()
             except Exception:
                 pass
-            await asyncio.sleep(period)
+            await asyncio.sleep(3)
+            # Attempt reconnection
+            if not client.connect():
+                logger.warning(f'Failed to reconnect to inverter after exception in {section}')
             return None
-        else:
-            return rb.registers
 
     # Read the common blocks on the Inverter
     while True:
